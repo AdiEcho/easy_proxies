@@ -433,6 +433,15 @@ func (h *EntryHandle) RecordSuccess() {
 	h.ref.recordSuccess()
 }
 
+// RecordSuccessWithLatency updates the last success timestamp and latency.
+func (h *EntryHandle) RecordSuccessWithLatency(latency time.Duration) {
+	if h == nil || h.ref == nil {
+		return
+	}
+	h.ref.recordSuccess()
+	h.ref.recordProbeLatency(latency)
+}
+
 // Blacklist marks the node unavailable until the given deadline.
 func (h *EntryHandle) Blacklist(until time.Time) {
 	if h == nil || h.ref == nil {

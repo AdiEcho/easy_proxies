@@ -261,8 +261,8 @@ func (p *poolOutbound) probeAllMembersOnStartup() {
 			p.logger.Info("initial probe success for ", member.tag, ", latency: ", latency.Milliseconds(), "ms")
 			availableCount++
 			if member.entry != nil {
-				member.entry.RecordSuccess()
-				member.entry.MarkInitialCheckDone(true) // 标记为可用
+				member.entry.RecordSuccessWithLatency(latency) // 记录成功和延迟
+				member.entry.MarkInitialCheckDone(true)        // 标记为可用
 			}
 		}
 
