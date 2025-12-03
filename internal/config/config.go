@@ -199,8 +199,9 @@ func (c *Config) normalize() error {
 	// Load nodes from subscriptions (highest priority - writes to nodes.txt)
 	if len(c.Subscriptions) > 0 {
 		var subNodes []NodeConfig
+		subTimeout := c.SubscriptionRefresh.Timeout
 		for _, subURL := range c.Subscriptions {
-			nodes, err := loadNodesFromSubscription(subURL)
+			nodes, err := loadNodesFromSubscription(subURL, subTimeout)
 			if err != nil {
 				log.Printf("⚠️ Failed to load subscription %q: %v (skipping)", subURL, err)
 				continue
@@ -297,9 +298,12 @@ func loadNodesFromFile(path string) ([]NodeConfig, error) {
 
 // loadNodesFromSubscription fetches and parses nodes from a subscription URL
 // Supports multiple formats: base64 encoded, plain text, clash yaml, etc.
-func loadNodesFromSubscription(subURL string) ([]NodeConfig, error) {
+func loadNodesFromSubscription(subURL string, timeout time.Duration) ([]NodeConfig, error) {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: timeout,
 	}
 
 	req, err := http.NewRequest("GET", subURL, nil)
