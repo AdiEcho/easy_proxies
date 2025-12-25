@@ -949,6 +949,39 @@ func (c *Config) Save() error {
 	return c.SaveNodes()
 }
 
+// SaveSettings persists only config settings (external_ip, probe_target, skip_cert_verify)
+// without touching nodes.txt. Use this for settings API updates.
+func (c *Config) SaveSettings() error {
+	if c == nil {
+		return errors.New("config is nil")
+	}
+	if c.filePath == "" {
+		return errors.New("config file path is unknown")
+	}
+
+	data, err := os.ReadFile(c.filePath)
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+	var saveCfg Config
+	if err := yaml.Unmarshal(data, &saveCfg); err != nil {
+		return fmt.Errorf("decode config: %w", err)
+	}
+
+	saveCfg.ExternalIP = c.ExternalIP
+	saveCfg.Management.ProbeTarget = c.Management.ProbeTarget
+	saveCfg.SkipCertVerify = c.SkipCertVerify
+
+	newData, err := yaml.Marshal(&saveCfg)
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	if err := os.WriteFile(c.filePath, newData, 0o644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
+}
+
 // isPortAvailable checks if a port is available for binding.
 func isPortAvailable(address string, port uint16) bool {
 	addr := fmt.Sprintf("%s:%d", address, port)
