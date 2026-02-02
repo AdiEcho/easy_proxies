@@ -9,14 +9,14 @@ A proxy node pool management tool based on [sing-box](https://github.com/SagerNe
 ### Core Features
 - **Multi-Protocol Support**: VMess, VLESS, Hysteria2 (hy2://), Shadowsocks, Trojan
 - **Multiple Transports**: TCP, WebSocket, HTTP/2, gRPC, HTTPUpgrade
-- **GeoIP Region Routing** ⭐: Automatic node geolocation with region-based filtering
-  - Auto-download GeoIP database on first startup
-  - Automatic periodic updates (configurable interval, default 24h)
-  - Hot-reload without service interruption
-  - Dashboard statistics by region (JP, KR, US, HK, TW, etc.)
 - **Subscription Support**: Auto-fetch nodes from subscription links (Base64, Clash YAML, etc.)
 - **Subscription Auto-Refresh**: Automatic periodic refresh with WebUI manual trigger (⚠️ causes connection interruption)
 - **Pool Mode**: Automatic failover and load balancing
+  - **GeoIP Region Routing** ⭐ (Optional): Access region-specific node pools via URL paths
+    - `/jp` - Japan nodes, `/kr` - Korea nodes, `/us` - US nodes, etc.
+    - Auto-download GeoIP database on first startup
+    - Automatic periodic updates (configurable, default 24h)
+    - Hot-reload without service interruption
 - **Multi-Port Mode**: Each node listens on independent port
 - **Hybrid Mode**: Pool + Multi-Port simultaneously with shared node state
 
@@ -540,16 +540,16 @@ go build -tags "with_utls with_quic with_grpc with_wireguard with_gvisor" -o eas
 
 ### v1.1.0 (2026-02-02) - GeoIP, Security & Performance Release
 
-**🌍 GeoIP Features (Major):**
+**🌍 GeoIP Features (Pool Mode Only):**
+- ⭐ **Region-Based Pool Routing** (Optional Feature)
+  - Access region-specific node pools via URL paths: `/jp`, `/kr`, `/us`, `/hk`, `/tw`, etc.
+  - Automatic IP geolocation for all nodes in pool mode
+  - Dashboard displays node count by region
 - ⭐ **Automatic GeoIP Database Management**
-  - Auto-download on first startup from GitHub
+  - Auto-download on first startup from GitHub (~9MB)
   - Periodic auto-update (configurable interval, default 24h)
   - Hot-reload without service interruption
   - MMDB format validation and integrity checks
-- ⭐ **Region-Based Node Routing**
-  - Automatic IP geolocation for all nodes
-  - Dashboard statistics by region (JP, KR, US, HK, TW, etc.)
-  - Region filtering and sorting capabilities
 - ⭐ **hy2:// Protocol Support**
   - Support for Hysteria2 shorthand (hy2://)
   - Backward compatible with hysteria2://
@@ -575,7 +575,8 @@ go build -tags "with_utls with_quic with_grpc with_wireguard with_gvisor" -o eas
 - No breaking changes - fully backward compatible
 
 **📝 Upgrade Notes:**
-- GeoIP database will be auto-downloaded on first startup (no manual setup needed)
+- GeoIP is an optional feature for pool mode (disabled by default)
+- GeoIP database will be auto-downloaded when enabled
 - Existing sessions will be invalidated on upgrade (users need to re-login)
 - No configuration changes required
 - Recommended to restart service during low-traffic period
