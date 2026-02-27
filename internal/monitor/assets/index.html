@@ -1440,6 +1440,11 @@
           </label>
         </div>
         <p class="form-help" style="margin-top: -8px;">启用后所有节点将忽略 SSL 证书错误，修改后需重载生效</p>
+        <!-- GeoIP 状态信息（只读） -->
+        <div id="geoipStatusSection" class="form-group" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06);">
+          <label class="form-label">GeoIP 地域识别</label>
+          <div id="geoipStatusContent" style="background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.6;"></div>
+        </div>
         <div id="settingsError" class="login-error"></div>
         <div class="modal-buttons">
           <button type="button" class="btn btn-secondary" onclick="hideSettingsModal()">取消</button>
@@ -2167,12 +2172,55 @@
           document.getElementById('settingProbeTarget').value = data.probe_target || '';
           document.getElementById('settingSkipCertVerify').checked = data.skip_cert_verify || false;
           document.getElementById('settingsError').classList.remove('show');
+          // 填充 GeoIP 状态
+          renderGeoIPStatus(data);
           document.getElementById('settingsOverlay').classList.add('show');
         })
         .catch(err => {
           console.error('Failed to load settings', err);
           document.getElementById('settingsOverlay').classList.add('show');
         });
+    }
+
+    function renderGeoIPStatus(data) {
+      const container = document.getElementById('geoipStatusContent');
+      if (!container) return;
+
+      const mode = data.mode || '';
+      const modeSupportsGeoIP = (mode === 'pool' || mode === 'hybrid');
+
+      if (!modeSupportsGeoIP) {
+        container.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;color:#f0ad4e;">
+            <span style="font-size:16px;">&#9888;</span>
+            <span>当前模式为 <strong>${mode || '未知'}</strong>，GeoIP 仅在 pool 或 hybrid 模式下可用</span>
+          </div>`;
+        return;
+      }
+
+      if (!data.geoip_enabled) {
+        container.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;color:rgba(255,255,255,0.45);">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#6c757d;"></span>
+            <span>未启用</span>
+          </div>
+          <div style="margin-top:8px;color:rgba(255,255,255,0.35);font-size:12px;">
+            在配置文件中设置 <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;">geoip.enabled: true</code> 并提供 GeoLite2 数据库路径以启用地域分流
+          </div>`;
+        return;
+      }
+
+      const dbPath = data.geoip_database_path || '未配置';
+      const autoUpdate = data.geoip_auto_update ? '已启用' : '未启用';
+      container.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;color:#5cb85c;">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#5cb85c;"></span>
+          <span>已启用</span>
+        </div>
+        <div style="margin-top:8px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;color:rgba(255,255,255,0.5);">
+          <span>数据库路径</span><span style="color:rgba(255,255,255,0.7);word-break:break-all;">${dbPath}</span>
+          <span>自动更新</span><span style="color:rgba(255,255,255,0.7);">${autoUpdate}</span>
+        </div>`;
     }
 
     function hideSettingsModal() {

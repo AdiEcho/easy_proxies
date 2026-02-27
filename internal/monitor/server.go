@@ -624,11 +624,21 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		extIP, probeTarget, skipCertVerify := s.getSettings()
-		writeJSON(w, map[string]any{
+		resp := map[string]any{
 			"external_ip":      extIP,
 			"probe_target":     probeTarget,
 			"skip_cert_verify": skipCertVerify,
-		})
+		}
+		// 追加 GeoIP 状态（只读展示）
+		s.cfgMu.RLock()
+		if s.cfgSrc != nil {
+			resp["geoip_enabled"] = s.cfgSrc.GeoIP.Enabled
+			resp["geoip_database_path"] = s.cfgSrc.GeoIP.DatabasePath
+			resp["geoip_auto_update"] = s.cfgSrc.GeoIP.AutoUpdateEnabled
+			resp["mode"] = s.cfgSrc.Mode
+		}
+		s.cfgMu.RUnlock()
+		writeJSON(w, resp)
 	case http.MethodPut:
 		var req struct {
 			ExternalIP     string `json:"external_ip"`
