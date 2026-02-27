@@ -52,6 +52,11 @@ var (
 type SubscriptionRefresher interface {
 	RefreshNow() error
 	Status() SubscriptionStatus
+	ListSubscriptions() []config.SubscriptionSource
+	AddSubscription(sub config.SubscriptionSource) error
+	UpdateSubscription(oldURL string, sub config.SubscriptionSource) error
+	DeleteSubscription(subURL string) error
+	RefreshOne(subURL string) (int, error)
 }
 
 // SubscriptionStatus represents subscription refresh status.
@@ -67,12 +72,12 @@ type SubscriptionStatus struct {
 
 // Server exposes HTTP endpoints for monitoring.
 type Server struct {
-	cfg          Config
-	cfgMu        sync.RWMutex   // 保护动态配置字段
-	cfgSrc       *config.Config // 可持久化的配置对象
-	mgr          *Manager
-	srv          *http.Server
-	logger       *log.Logger
+	cfg    Config
+	cfgMu  sync.RWMutex   // 保护动态配置字段
+	cfgSrc *config.Config // 可持久化的配置对象
+	mgr    *Manager
+	srv    *http.Server
+	logger *log.Logger
 
 	// Session management
 	sessionMu  sync.RWMutex
@@ -126,6 +131,8 @@ func NewServer(cfg Config, mgr *Manager, logger *log.Logger) *Server {
 	mux.HandleFunc("/api/export", s.withAuth(s.handleExport))
 	mux.HandleFunc("/api/subscription/status", s.withAuth(s.handleSubscriptionStatus))
 	mux.HandleFunc("/api/subscription/refresh", s.withAuth(s.handleSubscriptionRefresh))
+	mux.HandleFunc("/api/subscriptions", s.withAuth(s.handleSubscriptions))
+	mux.HandleFunc("/api/subscriptions/", s.withAuth(s.handleSubscriptionItem))
 	mux.HandleFunc("/api/reload", s.withAuth(s.handleReload))
 	s.srv = &http.Server{Addr: cfg.Listen, Handler: mux}
 	return s
@@ -793,6 +800,180 @@ func (s *Server) handleConfigNodeItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"message": "节点已删除，请点击重载使配置生效"})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// handleSubscriptions handles GET (list) and POST (add) for subscription sources.
+func (s *Server) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
+	if s.subRefresher == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeJSON(w, map[string]any{"error": "订阅管理未启用"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		subs := s.subRefresher.ListSubscriptions()
+		// Build subscription info with node stats from monitor
+		allNodes := s.mgr.Snapshot()
+
+		// First pass: compute base aliases
+		type subEntry struct {
+			sub        config.SubscriptionSource
+			baseAlias  string
+			nodeCount  int
+			aliveCount int
+		}
+		entries := make([]subEntry, 0, len(subs))
+		for _, sub := range subs {
+			alias := sub.Alias
+			if alias == "" {
+				alias = config.DefaultAliasFromURL(sub.URL)
+			}
+			nodeCount := 0
+			aliveCount := 0
+			for _, snap := range allNodes {
+				if snap.SubscriptionURL == sub.URL {
+					nodeCount++
+					if snap.InitialCheckDone && snap.Available && !snap.Blacklisted {
+						aliveCount++
+					}
+				}
+			}
+			entries = append(entries, subEntry{sub: sub, baseAlias: alias, nodeCount: nodeCount, aliveCount: aliveCount})
+		}
+
+		// Second pass: deduplicate aliases by appending incrementing numbers
+		aliasCount := make(map[string]int) // count occurrences of each base alias
+		for _, e := range entries {
+			aliasCount[e.baseAlias]++
+		}
+		aliasSeq := make(map[string]int) // current sequence per base alias
+		subInfos := make([]map[string]any, 0, len(entries))
+		for _, e := range entries {
+			alias := e.baseAlias
+			if aliasCount[alias] > 1 {
+				aliasSeq[alias]++
+				if aliasSeq[alias] == 1 {
+					// first one keeps the base name
+				} else {
+					alias = fmt.Sprintf("%s-%d", alias, aliasSeq[alias])
+				}
+			}
+			aliveRate := float64(0)
+			if e.nodeCount > 0 {
+				aliveRate = float64(e.aliveCount) / float64(e.nodeCount) * 100
+			}
+			subInfos = append(subInfos, map[string]any{
+				"url":         e.sub.URL,
+				"alias":       alias,
+				"node_count":  e.nodeCount,
+				"alive_count": e.aliveCount,
+				"alive_rate":  aliveRate,
+			})
+		}
+		writeJSON(w, map[string]any{"subscriptions": subInfos})
+
+	case http.MethodPost:
+		var req struct {
+			URL   string `json:"url"`
+			Alias string `json:"alias"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{"error": "请求格式错误"})
+			return
+		}
+		req.URL = strings.TrimSpace(req.URL)
+		if req.URL == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{"error": "URL 不能为空"})
+			return
+		}
+		sub := config.SubscriptionSource{URL: req.URL, Alias: strings.TrimSpace(req.Alias)}
+		if err := s.subRefresher.AddSubscription(sub); err != nil {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, map[string]any{"message": "订阅源已添加", "subscription": sub})
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// handleSubscriptionItem handles PUT (update), DELETE, and POST (refresh) for a specific subscription.
+func (s *Server) handleSubscriptionItem(w http.ResponseWriter, r *http.Request) {
+	if s.subRefresher == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeJSON(w, map[string]any{"error": "订阅管理未启用"})
+		return
+	}
+
+	// Parse path: /api/subscriptions/{encodedURL} or /api/subscriptions/{encodedURL}/refresh
+	// Use RawPath to preserve percent-encoding (e.g. %2F in subscription URLs).
+	rawPath := r.URL.RawPath
+	if rawPath == "" {
+		rawPath = r.URL.Path
+	}
+	pathPart := strings.TrimPrefix(rawPath, "/api/subscriptions/")
+	parts := strings.SplitN(pathPart, "/", 2)
+	encodedURL := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+
+	subURL, err := url.QueryUnescape(encodedURL)
+	if err != nil || subURL == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]any{"error": "无效的订阅源 URL"})
+		return
+	}
+
+	switch {
+	case action == "refresh" && r.Method == http.MethodPost:
+		count, err := s.subRefresher.RefreshOne(subURL)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeJSON(w, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, map[string]any{"message": "拉取成功", "node_count": count})
+
+	case action == "" && r.Method == http.MethodPut:
+		var req struct {
+			URL   string `json:"url"`
+			Alias string `json:"alias"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{"error": "请求格式错误"})
+			return
+		}
+		req.URL = strings.TrimSpace(req.URL)
+		if req.URL == "" {
+			req.URL = subURL
+		}
+		newSub := config.SubscriptionSource{URL: req.URL, Alias: strings.TrimSpace(req.Alias)}
+		if err := s.subRefresher.UpdateSubscription(subURL, newSub); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(w, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, map[string]any{"message": "订阅源已更新", "subscription": newSub})
+
+	case action == "" && r.Method == http.MethodDelete:
+		if err := s.subRefresher.DeleteSubscription(subURL); err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			writeJSON(w, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, map[string]any{"message": "订阅源已删除"})
+
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}

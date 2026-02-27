@@ -99,6 +99,15 @@ geoip:
 # ───────────────────────────────────────────────────────────────
 # 方式 1: 订阅链接（推荐，自动获取并写入 nodes.txt）
 # ───────────────────────────────────────────────────────────────
+# 支持别名，默认从 URL 路径提取文件名作为别名
+# 也可在 WebUI「订阅管理」面板中在线添加和管理
+# subscriptions:
+#   - url: "https://example.com/subscribe?token=xxx"
+#     alias: "机场A"                   # 可选，自定义别名
+#   - url: "https://another.com/api/v1/client/subscribe?token=yyy"
+#     # alias 留空则自动取 URL 文件名 "subscribe"
+#
+# 也兼容旧格式（纯字符串列表）:
 # subscriptions:
 #   - "https://example.com/subscribe?token=xxx"
 #   - "https://another.com/api/v1/client/subscribe?token=yyy"

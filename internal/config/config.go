@@ -18,6 +18,99 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SubscriptionSource represents a subscription source with optional alias.
+type SubscriptionSource struct {
+	URL   string `yaml:"url" json:"url"`
+	Alias string `yaml:"alias,omitempty" json:"alias,omitempty"`
+}
+
+// SubscriptionList is a list of SubscriptionSource that supports both
+// old format ([]string) and new format ([]SubscriptionSource) in YAML.
+type SubscriptionList []SubscriptionSource
+
+// UnmarshalYAML implements custom YAML unmarshaling for backward compatibility.
+// Supports both formats:
+//
+//	subscriptions: ["url1", "url2"]                    # old string list
+//	subscriptions: [{url: "url1", alias: "name"}]      # new struct list
+func (sl *SubscriptionList) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Try new format first
+	var sources []SubscriptionSource
+	if err := unmarshal(&sources); err == nil {
+		*sl = sources
+		return nil
+	}
+	// Fallback: try old string list format
+	var urls []string
+	if err := unmarshal(&urls); err != nil {
+		return err
+	}
+	result := make([]SubscriptionSource, len(urls))
+	for i, u := range urls {
+		result[i] = SubscriptionSource{URL: u}
+	}
+	*sl = result
+	return nil
+}
+
+// URLs returns a flat list of subscription URLs.
+func (sl SubscriptionList) URLs() []string {
+	urls := make([]string, len(sl))
+	for i, s := range sl {
+		urls[i] = s.URL
+	}
+	return urls
+}
+
+// AliasForURL returns the alias for a given URL, defaulting to the filename from the URL.
+func (sl SubscriptionList) AliasForURL(rawURL string) string {
+	for _, s := range sl {
+		if s.URL == rawURL {
+			if s.Alias != "" {
+				return s.Alias
+			}
+			break
+		}
+	}
+	return defaultAliasFromURL(rawURL)
+}
+
+// DefaultAliasFromURL extracts a default alias from a URL (last path segment without extension).
+func DefaultAliasFromURL(rawURL string) string {
+	return defaultAliasFromURL(rawURL)
+}
+
+// genericPathNames are common subscription path segments that are not descriptive enough as aliases.
+var genericPathNames = map[string]bool{
+	"subscribe": true, "sub": true, "clash": true, "link": true,
+	"api": true, "client": true, "v1": true, "v2": true,
+	"download": true, "get": true, "token": true, "index": true,
+}
+
+// defaultAliasFromURL extracts a default alias from a URL.
+// It prefers the last meaningful path segment; if that segment is a generic name
+// (e.g. "subscribe", "sub"), it falls back to the hostname.
+func defaultAliasFromURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if path == "" {
+		return parsed.Host
+	}
+	segments := strings.Split(path, "/")
+	last := segments[len(segments)-1]
+	// Remove common extensions
+	for _, ext := range []string{".txt", ".yaml", ".yml", ".json", ".conf", ".sub", ".list"} {
+		last = strings.TrimSuffix(last, ext)
+	}
+	if last == "" || genericPathNames[strings.ToLower(last)] {
+		return parsed.Host
+	}
+	return last
+}
+
 // Config describes the high level settings for the proxy pool server.
 type Config struct {
 	Mode                string                    `yaml:"mode"`
@@ -29,8 +122,8 @@ type Config struct {
 	GeoIP               GeoIPConfig               `yaml:"geoip"`
 	Nodes               []NodeConfig              `yaml:"nodes"`
 	NodesFile           string                    `yaml:"nodes_file"`    // 节点文件路径，每行一个 URI
-	Subscriptions       []string                  `yaml:"subscriptions"` // 订阅链接列表
-	ExternalIP          string                    `yaml:"external_ip"`      // 外部 IP 地址，用于导出时替换 0.0.0.0
+	Subscriptions       SubscriptionList          `yaml:"subscriptions"` // 订阅源列表（支持别名）
+	ExternalIP          string                    `yaml:"external_ip"`   // 外部 IP 地址，用于导出时替换 0.0.0.0
 	LogLevel            string                    `yaml:"log_level"`
 	SkipCertVerify      bool                      `yaml:"skip_cert_verify"` // 全局跳过 SSL 证书验证
 
@@ -99,12 +192,13 @@ const (
 
 // NodeConfig describes a single upstream proxy endpoint expressed as URI.
 type NodeConfig struct {
-	Name     string     `yaml:"name" json:"name"`
-	URI      string     `yaml:"uri" json:"uri"`
-	Port     uint16     `yaml:"port,omitempty" json:"port,omitempty"`
-	Username string     `yaml:"username,omitempty" json:"username,omitempty"`
-	Password string     `yaml:"password,omitempty" json:"password,omitempty"`
-	Source   NodeSource `yaml:"-" json:"source,omitempty"` // Runtime only, not persisted
+	Name            string     `yaml:"name" json:"name"`
+	URI             string     `yaml:"uri" json:"uri"`
+	Port            uint16     `yaml:"port,omitempty" json:"port,omitempty"`
+	Username        string     `yaml:"username,omitempty" json:"username,omitempty"`
+	Password        string     `yaml:"password,omitempty" json:"password,omitempty"`
+	Source          NodeSource `yaml:"-" json:"source,omitempty"`           // Runtime only, not persisted
+	SubscriptionURL string     `yaml:"-" json:"subscription_url,omitempty"` // Which subscription this node came from
 }
 
 // NodeKey returns a unique identifier for the node based on its URI.
@@ -220,18 +314,19 @@ func (c *Config) normalize() error {
 	if len(c.Subscriptions) > 0 {
 		var subNodes []NodeConfig
 		subTimeout := c.SubscriptionRefresh.Timeout
-		for _, subURL := range c.Subscriptions {
-			nodes, err := loadNodesFromSubscription(subURL, subTimeout)
+		for _, sub := range c.Subscriptions {
+			nodes, err := loadNodesFromSubscription(sub.URL, subTimeout)
 			if err != nil {
-				log.Printf("⚠️ Failed to load subscription %q: %v (skipping)", subURL, err)
+				log.Printf("⚠️ Failed to load subscription %q: %v (skipping)", sub.URL, err)
 				continue
 			}
-			log.Printf("✅ Loaded %d nodes from subscription", len(nodes))
+			log.Printf("✅ Loaded %d nodes from subscription %q", len(nodes), sub.URL)
+			// Tag nodes with subscription source URL
+			for idx := range nodes {
+				nodes[idx].Source = NodeSourceSubscription
+				nodes[idx].SubscriptionURL = sub.URL
+			}
 			subNodes = append(subNodes, nodes...)
-		}
-		// Mark subscription nodes and write to nodes.txt
-		for idx := range subNodes {
-			subNodes[idx].Source = NodeSourceSubscription
 		}
 		if len(subNodes) > 0 {
 			// Determine nodes.txt path
@@ -646,27 +741,27 @@ type clashConfig struct {
 }
 
 type clashProxy struct {
-	Name           string                 `yaml:"name"`
-	Type           string                 `yaml:"type"`
-	Server         string                 `yaml:"server"`
-	Port           int                    `yaml:"port"`
-	UUID           string                 `yaml:"uuid"`
-	Password       string                 `yaml:"password"`
-	Cipher         string                 `yaml:"cipher"`
-	AlterId        int                    `yaml:"alterId"`
-	Network        string                 `yaml:"network"`
-	TLS            bool                   `yaml:"tls"`
-	SkipCertVerify bool                   `yaml:"skip-cert-verify"`
-	ServerName     string                 `yaml:"servername"`
-	SNI            string                 `yaml:"sni"`
-	Flow           string                 `yaml:"flow"`
-	UDP            bool                   `yaml:"udp"`
-	WSOpts         *clashWSOptions        `yaml:"ws-opts"`
-	GrpcOpts       *clashGrpcOptions      `yaml:"grpc-opts"`
-	RealityOpts    *clashRealityOptions   `yaml:"reality-opts"`
-	ClientFingerprint string              `yaml:"client-fingerprint"`
-	Plugin         string                 `yaml:"plugin"`
-	PluginOpts     map[string]interface{} `yaml:"plugin-opts"`
+	Name              string                 `yaml:"name"`
+	Type              string                 `yaml:"type"`
+	Server            string                 `yaml:"server"`
+	Port              int                    `yaml:"port"`
+	UUID              string                 `yaml:"uuid"`
+	Password          string                 `yaml:"password"`
+	Cipher            string                 `yaml:"cipher"`
+	AlterId           int                    `yaml:"alterId"`
+	Network           string                 `yaml:"network"`
+	TLS               bool                   `yaml:"tls"`
+	SkipCertVerify    bool                   `yaml:"skip-cert-verify"`
+	ServerName        string                 `yaml:"servername"`
+	SNI               string                 `yaml:"sni"`
+	Flow              string                 `yaml:"flow"`
+	UDP               bool                   `yaml:"udp"`
+	WSOpts            *clashWSOptions        `yaml:"ws-opts"`
+	GrpcOpts          *clashGrpcOptions      `yaml:"grpc-opts"`
+	RealityOpts       *clashRealityOptions   `yaml:"reality-opts"`
+	ClientFingerprint string                 `yaml:"client-fingerprint"`
+	Plugin            string                 `yaml:"plugin"`
+	PluginOpts        map[string]interface{} `yaml:"plugin-opts"`
 }
 
 type clashWSOptions struct {
@@ -1000,6 +1095,37 @@ func (c *Config) SaveSettings() error {
 	}
 
 	// Use file locking for safe concurrent writes
+	if err := writeFileWithLock(c.filePath, newData, 0o644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
+}
+
+// SaveSubscriptions persists subscription sources to config.yaml.
+func (c *Config) SaveSubscriptions() error {
+	if c == nil {
+		return errors.New("config is nil")
+	}
+	if c.filePath == "" {
+		return errors.New("config file path is unknown")
+	}
+
+	data, err := os.ReadFile(c.filePath)
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+	var saveCfg Config
+	if err := yaml.Unmarshal(data, &saveCfg); err != nil {
+		return fmt.Errorf("decode config: %w", err)
+	}
+
+	saveCfg.Subscriptions = c.Subscriptions
+
+	newData, err := yaml.Marshal(&saveCfg)
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+
 	if err := writeFileWithLock(c.filePath, newData, 0o644); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}

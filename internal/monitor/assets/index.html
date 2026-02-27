@@ -934,6 +934,145 @@
     .probe-progress-detail .success { color: var(--success); }
     .probe-progress-detail .failed { color: var(--error); }
 
+    /* Subscription Management */
+    .sub-card {
+      background: var(--bg-elevated);
+      backdrop-filter: saturate(180%) blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+    .sub-card:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-1px);
+    }
+    .sub-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .sub-alias {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.01em;
+    }
+    .sub-url {
+      font-family: "SF Mono", "Fira Code", "Monaco", monospace;
+      font-size: 12px;
+      color: var(--text-secondary);
+      word-break: break-all;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .sub-stats {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    .sub-stat-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .sub-stat-value {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .alive-rate-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+    .alive-rate-bar {
+      flex: 1;
+      height: 6px;
+      background: rgba(0, 0, 0, 0.08);
+      border-radius: 3px;
+      overflow: hidden;
+      min-width: 60px;
+    }
+    .alive-rate-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease, background-color 0.3s ease;
+    }
+    .alive-rate-text {
+      font-size: 13px;
+      font-weight: 600;
+      min-width: 40px;
+      text-align: right;
+    }
+    .sub-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .sub-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      background: rgba(0, 122, 255, 0.1);
+      color: var(--primary);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .sub-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .sub-modal-overlay.show {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .sub-modal {
+      background: var(--bg-elevated);
+      backdrop-filter: saturate(180%) blur(40px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: var(--shadow-lg);
+    }
+    .sub-modal h2 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .sub-modal p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      margin-bottom: 24px;
+    }
+    #subscriptionsGrid {
+      display: grid;
+      gap: 16px;
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .app { padding: 24px 16px; }
@@ -975,6 +1114,7 @@
     <div class="tabs">
       <button class="tab active" onclick="switchTab('monitor')">📊 节点监控</button>
       <button class="tab" onclick="switchTab('manage')">⚙️ 节点管理</button>
+      <button class="tab" onclick="switchTab('subscription')">📡 订阅管理</button>
       <button class="tab" onclick="switchTab('debug')">🐞 调试面板</button>
     </div>
 
@@ -1131,6 +1271,40 @@
       </div>
     </div><!-- end manageTab -->
 
+    <!-- 订阅管理 -->
+    <div id="subscriptionTab" class="tab-content">
+      <div class="manage-header">
+        <h2>订阅源管理</h2>
+        <p class="manage-desc">管理代理节点订阅源，支持添加、编辑、删除和刷新订阅</p>
+      </div>
+
+      <div class="manage-actions">
+        <button class="btn btn-primary" onclick="showAddSubscriptionModal()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          添加订阅
+        </button>
+        <button class="btn btn-secondary" onclick="refreshAllSubscriptions()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M13.65 2.35A7.958 7.958 0 0 0 8 0C3.58 0 0 3.58 0 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z" fill="currentColor"/>
+          </svg>
+          全部刷新
+        </button>
+      </div>
+
+      <div id="subscriptionsGrid"></div>
+
+      <div id="subscriptionEmptyState" class="empty" style="display: none;">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none" opacity="0.2">
+          <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="4"/>
+          <path d="M32 16v32M16 32h32" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+        </svg>
+        <h3>暂无订阅源</h3>
+        <p>点击"添加订阅"开始配置</p>
+      </div>
+    </div><!-- end subscriptionTab -->
+
     <!-- 调试面板 -->
     <div id="debugTab" class="tab-content">
       <div class="manage-header">
@@ -1211,6 +1385,30 @@
         <div class="modal-buttons">
           <button type="button" class="btn btn-secondary" onclick="hideNodeModal()">取消</button>
           <button type="submit" class="btn btn-primary" id="nodeSubmitBtn">添加</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div id="subscriptionModalOverlay" class="sub-modal-overlay">
+    <div class="sub-modal">
+      <h2 id="subModalTitle">添加订阅源</h2>
+      <p id="subModalDesc">输入订阅 URL 和别名</p>
+      <form class="login-form" onsubmit="handleSubModalSubmit(event)">
+        <div class="form-group">
+          <label class="form-label" for="subInputURL">订阅 URL <span style="color: var(--error);">*</span></label>
+          <input type="url" id="subInputURL" class="form-input" placeholder="https://example.com/sub" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="subInputAlias">别名 (可选)</label>
+          <input type="text" id="subInputAlias" class="form-input" placeholder="例如：机场A" />
+        </div>
+        <input type="hidden" id="subEditOldURL" />
+        <div id="subModalError" class="login-error"></div>
+        <div class="modal-buttons">
+          <button type="button" class="btn btn-secondary" onclick="hideSubModal()">取消</button>
+          <button type="submit" class="btn btn-primary" id="subSubmitBtn">添加</button>
         </div>
       </form>
     </div>
@@ -1543,12 +1741,13 @@
         const quality = getLatencyQuality(latency);
         const region = node.region || 'other';
         const regionBadge = node.region ? `<span class="region-badge">${getRegionEmoji(region)} ${getRegionName(region)}</span>` : '';
+        const subBadge = node.subscription_url ? `<span class="sub-badge">${getSubscriptionAlias(node.subscription_url)}</span>` : '';
 
         return `
           <div class="node-card ${status}" data-region="${region}">
             <div class="node-header">
               <div class="node-info">
-                <div class="node-name">${node.name || node.tag}${regionBadge}</div>
+                <div class="node-name">${node.name || node.tag}${regionBadge}${subBadge}</div>
                 <div class="node-tag">${node.tag}${node.country ? ` · ${node.country}` : ''}</div>
               </div>
               <span class="status-badge ${status}">
@@ -2033,6 +2232,8 @@
         loadConfigNodes();
       } else if (tabName === 'debug') {
         loadDebugData();
+      } else if (tabName === 'subscription') {
+        loadSubscriptions();
       }
     }
 
@@ -2256,6 +2457,212 @@
           </svg>
           重载配置
         `;
+      }
+    }
+
+    // === Subscription Management ===
+    let subscriptions = [];
+
+    const _genericPathNames = new Set([
+      'subscribe','sub','clash','link','api','client','v1','v2','download','get','token','index'
+    ]);
+    function getSubscriptionAlias(url) {
+      const found = subscriptions.find(s => s.url === url);
+      if (found && found.alias) return found.alias;
+      // fallback: prefer hostname over generic path names like "subscribe"
+      try {
+        const u = new URL(url);
+        const parts = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+        const last = (parts[parts.length - 1] || '').replace(/\.(txt|yaml|yml|json|conf|sub|list)$/i, '');
+        if (last && !_genericPathNames.has(last.toLowerCase())) return last;
+        return u.hostname;
+      } catch (e) {
+        return url.substring(0, 20);
+      }
+    }
+
+    async function loadSubscriptions() {
+      try {
+        const res = await fetch('/api/subscriptions');
+        if (res.status === 401) { showToast('请先登录', 'error'); return; }
+        if (!res.ok) throw new Error('加载失败');
+        const data = await res.json();
+        subscriptions = data.subscriptions || [];
+        renderSubscriptions();
+      } catch (err) {
+        showToast('加载订阅源失败: ' + err.message, 'error');
+      }
+    }
+
+    function renderSubscriptions() {
+      const grid = document.getElementById('subscriptionsGrid');
+      const emptyState = document.getElementById('subscriptionEmptyState');
+      if (!grid) return;
+
+      if (subscriptions.length === 0) {
+        grid.innerHTML = '';
+        if (emptyState) emptyState.style.display = 'block';
+        return;
+      }
+      if (emptyState) emptyState.style.display = 'none';
+
+      grid.innerHTML = subscriptions.map((sub, index) => {
+        const rate = typeof sub.alive_rate === 'number' ? sub.alive_rate : 0;
+        const pct = rate.toFixed(1);
+        let fillColor = '#34c759';
+        if (rate < 30) fillColor = '#ff3b30';
+        else if (rate < 70) fillColor = '#ff9500';
+
+        const shortURL = sub.url.length > 60 ? sub.url.substring(0, 60) + '…' : sub.url;
+        const aliasDisplay = sub.alias || getSubscriptionAlias(sub.url);
+
+        return `
+          <div class="sub-card">
+            <div class="sub-card-header">
+              <div style="min-width: 0; flex: 1;">
+                <div class="sub-alias">${escapeHtml(aliasDisplay)}</div>
+                <div class="sub-url" title="${escapeHtml(sub.url)}">${escapeHtml(shortURL)}</div>
+              </div>
+              <div class="sub-actions">
+                <button class="btn btn-secondary btn-sm" onclick="refreshOneSubscription(${index})" title="刷新">🔄</button>
+                <button class="btn btn-secondary btn-sm" onclick="showEditSubscriptionModal(${index})" title="编辑">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteSubscription(${index})" title="删除">🗑</button>
+              </div>
+            </div>
+            <div class="sub-stats">
+              <div class="sub-stat-item">节点 <span class="sub-stat-value">${sub.node_count || 0}</span></div>
+              <div class="sub-stat-item">存活 <span class="sub-stat-value" style="color: var(--success);">${sub.alive_count || 0}</span></div>
+              <div class="alive-rate-container">
+                <div class="alive-rate-bar">
+                  <div class="alive-rate-fill" style="width: ${pct}%; background-color: ${fillColor};"></div>
+                </div>
+                <span class="alive-rate-text" style="color: ${fillColor};">${pct}%</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function showAddSubscriptionModal() {
+      document.getElementById('subModalTitle').textContent = '添加订阅源';
+      document.getElementById('subModalDesc').textContent = '输入订阅 URL 和别名';
+      document.getElementById('subInputURL').value = '';
+      document.getElementById('subInputAlias').value = '';
+      document.getElementById('subEditOldURL').value = '';
+      document.getElementById('subSubmitBtn').textContent = '添加';
+      const errEl = document.getElementById('subModalError');
+      if (errEl) errEl.classList.remove('show');
+      document.getElementById('subscriptionModalOverlay').classList.add('show');
+      document.getElementById('subInputURL').focus();
+    }
+
+    function showEditSubscriptionModal(index) {
+      const sub = subscriptions[index];
+      if (!sub) return;
+      document.getElementById('subModalTitle').textContent = '编辑订阅源';
+      document.getElementById('subModalDesc').textContent = '修改订阅信息';
+      document.getElementById('subInputURL').value = sub.url;
+      document.getElementById('subInputAlias').value = sub.alias || '';
+      document.getElementById('subEditOldURL').value = sub.url;
+      document.getElementById('subSubmitBtn').textContent = '保存';
+      const errEl = document.getElementById('subModalError');
+      if (errEl) errEl.classList.remove('show');
+      document.getElementById('subscriptionModalOverlay').classList.add('show');
+      document.getElementById('subInputURL').focus();
+    }
+
+    function hideSubModal() {
+      document.getElementById('subscriptionModalOverlay').classList.remove('show');
+    }
+
+    async function handleSubModalSubmit(event) {
+      event.preventDefault();
+      const url = document.getElementById('subInputURL').value.trim();
+      const alias = document.getElementById('subInputAlias').value.trim();
+      const oldURL = document.getElementById('subEditOldURL').value;
+      const isEdit = !!oldURL;
+      const errEl = document.getElementById('subModalError');
+
+      try {
+        let res;
+        if (isEdit) {
+          res = await fetch('/api/subscriptions/' + encodeURIComponent(oldURL), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, alias })
+          });
+        } else {
+          res = await fetch('/api/subscriptions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, alias })
+          });
+        }
+        const data = await res.json();
+        if (!res.ok) {
+          if (errEl) { errEl.textContent = data.error || '操作失败'; errEl.classList.add('show'); }
+          return;
+        }
+        hideSubModal();
+        showToast(isEdit ? '订阅源已更新' : '订阅源已添加', 'success');
+        await loadSubscriptions();
+      } catch (err) {
+        if (errEl) { errEl.textContent = '操作失败: ' + err.message; errEl.classList.add('show'); }
+      }
+    }
+
+    async function deleteSubscription(index) {
+      const sub = subscriptions[index];
+      if (!sub) return;
+      const aliasDisplay = sub.alias || getSubscriptionAlias(sub.url);
+      if (!confirm(`确定删除订阅源「${aliasDisplay}」吗？此操作不可撤销。`)) return;
+      try {
+        const res = await fetch('/api/subscriptions/' + encodeURIComponent(sub.url), { method: 'DELETE' });
+        if (!res.ok) {
+          const data = await res.json();
+          showToast('删除失败: ' + (data.error || '未知错误'), 'error');
+          return;
+        }
+        showToast('订阅源已删除', 'success');
+        await loadSubscriptions();
+      } catch (err) {
+        showToast('删除失败: ' + err.message, 'error');
+      }
+    }
+
+    async function refreshOneSubscription(index) {
+      const sub = subscriptions[index];
+      if (!sub) return;
+      const aliasDisplay = sub.alias || getSubscriptionAlias(sub.url);
+      showToast('正在刷新「' + aliasDisplay + '」...', 'success');
+      try {
+        const res = await fetch('/api/subscriptions/' + encodeURIComponent(sub.url) + '/refresh', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast('刷新失败: ' + (data.error || '未知错误'), 'error');
+          return;
+        }
+        showToast('刷新成功，共 ' + (data.node_count || 0) + ' 个节点', 'success');
+        await loadSubscriptions();
+      } catch (err) {
+        showToast('刷新失败: ' + err.message, 'error');
+      }
+    }
+
+    async function refreshAllSubscriptions() {
+      showToast('正在刷新所有订阅源...', 'success');
+      try {
+        const res = await fetch('/api/subscription/refresh', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast('刷新失败: ' + (data.error || '未知错误'), 'error');
+          return;
+        }
+        showToast(data.message || '所有订阅已刷新', 'success');
+        await loadSubscriptions();
+      } catch (err) {
+        showToast('刷新失败: ' + err.message, 'error');
       }
     }
 

@@ -71,13 +71,14 @@ type Options struct {
 
 // MemberMeta carries optional descriptive information for monitoring UI.
 type MemberMeta struct {
-	Name          string
-	URI           string
-	Mode          string
-	ListenAddress string
-	Port          uint16
-	Region        string // GeoIP region code: "jp", "kr", "us", "hk", "tw", "other"
-	Country       string // Full country name from GeoIP
+	Name            string
+	URI             string
+	Mode            string
+	ListenAddress   string
+	Port            uint16
+	Region          string // GeoIP region code: "jp", "kr", "us", "hk", "tw", "other"
+	Country         string // Full country name from GeoIP
+	SubscriptionURL string // Which subscription this node came from
 }
 
 // Register wires the pool outbound into the registry.
@@ -144,14 +145,15 @@ func newPool(ctx context.Context, _ adapter.Router, logger log.ContextLogger, ta
 
 			meta := normalized.Metadata[memberTag]
 			info := monitor.NodeInfo{
-				Tag:           memberTag,
-				Name:          meta.Name,
-				URI:           meta.URI,
-				Mode:          meta.Mode,
-				ListenAddress: meta.ListenAddress,
-				Port:          meta.Port,
-				Region:        meta.Region,
-				Country:       meta.Country,
+				Tag:             memberTag,
+				Name:            meta.Name,
+				URI:             meta.URI,
+				Mode:            meta.Mode,
+				ListenAddress:   meta.ListenAddress,
+				Port:            meta.Port,
+				Region:          meta.Region,
+				Country:         meta.Country,
+				SubscriptionURL: meta.SubscriptionURL,
 			}
 			entry := monitorMgr.Register(info)
 			if entry != nil {
@@ -241,14 +243,15 @@ func (p *poolOutbound) initializeMembersLocked() error {
 		if p.monitor != nil {
 			meta := p.options.Metadata[tag]
 			info := monitor.NodeInfo{
-				Tag:           tag,
-				Name:          meta.Name,
-				URI:           meta.URI,
-				Mode:          meta.Mode,
-				ListenAddress: meta.ListenAddress,
-				Port:          meta.Port,
-				Region:        meta.Region,
-				Country:       meta.Country,
+				Tag:             tag,
+				Name:            meta.Name,
+				URI:             meta.URI,
+				Mode:            meta.Mode,
+				ListenAddress:   meta.ListenAddress,
+				Port:            meta.Port,
+				Region:          meta.Region,
+				Country:         meta.Country,
+				SubscriptionURL: meta.SubscriptionURL,
 			}
 			entry := p.monitor.Register(info)
 			if entry != nil {

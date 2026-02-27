@@ -403,14 +403,18 @@ func (m *Manager) fetchAllSubscriptions() ([]config.NodeConfig, error) {
 		timeout = 30 * time.Second
 	}
 
-	for _, subURL := range m.baseCfg.Subscriptions {
-		nodes, err := m.fetchSubscription(subURL, timeout)
+	for _, sub := range m.baseCfg.Subscriptions {
+		nodes, err := m.fetchSubscription(sub.URL, timeout)
 		if err != nil {
-			m.logger.Warnf("failed to fetch %s: %v", subURL, err)
+			m.logger.Warnf("failed to fetch %s: %v", sub.URL, err)
 			lastErr = err
 			continue
 		}
-		m.logger.Infof("fetched %d nodes from subscription", len(nodes))
+		// Tag nodes with subscription source URL
+		for i := range nodes {
+			nodes[i].SubscriptionURL = sub.URL
+		}
+		m.logger.Infof("fetched %d nodes from subscription %q", len(nodes), sub.URL)
 		allNodes = append(allNodes, nodes...)
 	}
 
@@ -552,6 +556,102 @@ func parseNodesFromContent(content string) ([]config.NodeConfig, error) {
 		}
 	}
 	return nodes, nil
+}
+
+// SubscriptionInfo represents a subscription source with runtime statistics.
+type SubscriptionInfo struct {
+	URL        string  `json:"url"`
+	Alias      string  `json:"alias"`
+	NodeCount  int     `json:"node_count"`
+	AliveCount int     `json:"alive_count"`
+	AliveRate  float64 `json:"alive_rate"` // 0-100 percentage
+}
+
+// ListSubscriptions returns all configured subscription sources.
+func (m *Manager) ListSubscriptions() []config.SubscriptionSource {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	result := make([]config.SubscriptionSource, len(m.baseCfg.Subscriptions))
+	copy(result, m.baseCfg.Subscriptions)
+	return result
+}
+
+// AddSubscription adds a new subscription source and persists to config.
+func (m *Manager) AddSubscription(sub config.SubscriptionSource) error {
+	m.mu.Lock()
+	// Check for duplicate URL
+	for _, existing := range m.baseCfg.Subscriptions {
+		if existing.URL == sub.URL {
+			m.mu.Unlock()
+			return fmt.Errorf("订阅源已存在: %s", sub.URL)
+		}
+	}
+	m.baseCfg.Subscriptions = append(m.baseCfg.Subscriptions, sub)
+	m.mu.Unlock()
+
+	return m.baseCfg.SaveSubscriptions()
+}
+
+// UpdateSubscription updates an existing subscription source by URL.
+func (m *Manager) UpdateSubscription(oldURL string, sub config.SubscriptionSource) error {
+	m.mu.Lock()
+	found := false
+	for i, existing := range m.baseCfg.Subscriptions {
+		if existing.URL == oldURL {
+			// If URL changed, check for duplicate
+			if sub.URL != oldURL {
+				for j, other := range m.baseCfg.Subscriptions {
+					if j != i && other.URL == sub.URL {
+						m.mu.Unlock()
+						return fmt.Errorf("订阅源已存在: %s", sub.URL)
+					}
+				}
+			}
+			m.baseCfg.Subscriptions[i] = sub
+			found = true
+			break
+		}
+	}
+	m.mu.Unlock()
+
+	if !found {
+		return fmt.Errorf("订阅源不存在: %s", oldURL)
+	}
+	return m.baseCfg.SaveSubscriptions()
+}
+
+// DeleteSubscription removes a subscription source by URL.
+func (m *Manager) DeleteSubscription(subURL string) error {
+	m.mu.Lock()
+	found := false
+	subs := m.baseCfg.Subscriptions
+	for i, existing := range subs {
+		if existing.URL == subURL {
+			m.baseCfg.Subscriptions = append(subs[:i], subs[i+1:]...)
+			found = true
+			break
+		}
+	}
+	m.mu.Unlock()
+
+	if !found {
+		return fmt.Errorf("订阅源不存在: %s", subURL)
+	}
+	return m.baseCfg.SaveSubscriptions()
+}
+
+// RefreshOne fetches nodes from a single subscription URL and returns the count.
+func (m *Manager) RefreshOne(subURL string) (int, error) {
+	timeout := m.baseCfg.SubscriptionRefresh.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+
+	nodes, err := m.fetchSubscription(subURL, timeout)
+	if err != nil {
+		return 0, err
+	}
+	return len(nodes), nil
 }
 
 func isProxyURI(s string) bool {

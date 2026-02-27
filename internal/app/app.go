@@ -46,11 +46,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		server.SetConfig(cfg)
 	}
 
-	// Create and start SubscriptionManager if enabled
+	// Create SubscriptionManager if there are subscriptions (refresh loop only starts when enabled)
 	var subMgr *subscription.Manager
-	if cfg.SubscriptionRefresh.Enabled && len(cfg.Subscriptions) > 0 {
+	if len(cfg.Subscriptions) > 0 {
 		subMgr = subscription.New(cfg, boxMgr)
-		subMgr.Start()
+		subMgr.Start() // internally checks SubscriptionRefresh.Enabled
 		defer subMgr.Stop()
 
 		// Wire up subscription manager to monitor server for API endpoints

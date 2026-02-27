@@ -30,14 +30,15 @@ type Config struct {
 
 // NodeInfo is static metadata about a proxy entry.
 type NodeInfo struct {
-	Tag           string `json:"tag"`
-	Name          string `json:"name"`
-	URI           string `json:"uri"`
-	Mode          string `json:"mode"`
-	ListenAddress string `json:"listen_address,omitempty"`
-	Port          uint16 `json:"port,omitempty"`
-	Region        string `json:"region,omitempty"`  // GeoIP region code: "jp", "kr", "us", "hk", "tw", "other"
-	Country       string `json:"country,omitempty"` // Full country name from GeoIP
+	Tag             string `json:"tag"`
+	Name            string `json:"name"`
+	URI             string `json:"uri"`
+	Mode            string `json:"mode"`
+	ListenAddress   string `json:"listen_address,omitempty"`
+	Port            uint16 `json:"port,omitempty"`
+	Region          string `json:"region,omitempty"`           // GeoIP region code: "jp", "kr", "us", "hk", "tw", "other"
+	Country         string `json:"country,omitempty"`          // Full country name from GeoIP
+	SubscriptionURL string `json:"subscription_url,omitempty"` // Which subscription this node came from
 }
 
 // TimelineEvent represents a single usage event for debug tracking.
