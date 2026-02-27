@@ -21,11 +21,81 @@
       --text-primary: #1d1d1f;
       --text-secondary: #86868b;
       --bg-elevated: rgba(255, 255, 255, 0.8);
+      --bg-elevated-solid: #ffffff;
       --bg-base: #f5f5f7;
       --border: rgba(0, 0, 0, 0.06);
       --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
       --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
       --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.12);
+      --backdrop: saturate(180%) blur(20px);
+      --success-text: #1f9b47;
+      --warning-text: #c27100;
+      --error-text: #d32f2f;
+      --toggle-bg: #ccc;
+      --input-bg: rgba(255, 255, 255, 0.8);
+      --metric-bg: rgba(0, 0, 0, 0.02);
+      --metric-bg-hover: rgba(0, 0, 0, 0.04);
+      --geoip-muted: var(--text-secondary);
+      --geoip-subtle: var(--text-secondary);
+      --code-bg: rgba(0, 0, 0, 0.05);
+    }
+
+    /* Dark mode: system preference */
+    @media (prefers-color-scheme: dark) {
+      :root:not(.light-mode) {
+        --primary: #0a84ff;
+        --primary-hover: #409cff;
+        --success: #30d158;
+        --warning: #ff9f0a;
+        --error: #ff453a;
+        --text-primary: #f5f5f7;
+        --text-secondary: #98989d;
+        --bg-elevated: rgba(44, 44, 46, 0.8);
+        --bg-elevated-solid: #2c2c2e;
+        --bg-base: #1c1c1e;
+        --border: rgba(255, 255, 255, 0.08);
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+        --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+        --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.4);
+        --success-text: #30d158;
+        --warning-text: #ff9f0a;
+        --error-text: #ff453a;
+        --toggle-bg: #636366;
+        --input-bg: rgba(58, 58, 60, 0.8);
+        --metric-bg: rgba(255, 255, 255, 0.04);
+        --metric-bg-hover: rgba(255, 255, 255, 0.08);
+        --geoip-muted: rgba(255, 255, 255, 0.45);
+        --geoip-subtle: rgba(255, 255, 255, 0.35);
+        --code-bg: rgba(255, 255, 255, 0.08);
+      }
+    }
+
+    /* Dark mode: manual toggle */
+    body.dark-mode {
+      --primary: #0a84ff;
+      --primary-hover: #409cff;
+      --success: #30d158;
+      --warning: #ff9f0a;
+      --error: #ff453a;
+      --text-primary: #f5f5f7;
+      --text-secondary: #98989d;
+      --bg-elevated: rgba(44, 44, 46, 0.8);
+      --bg-elevated-solid: #2c2c2e;
+      --bg-base: #1c1c1e;
+      --border: rgba(255, 255, 255, 0.08);
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.4);
+      --success-text: #30d158;
+      --warning-text: #ff9f0a;
+      --error-text: #ff453a;
+      --toggle-bg: #636366;
+      --input-bg: rgba(58, 58, 60, 0.8);
+      --metric-bg: rgba(255, 255, 255, 0.04);
+      --metric-bg-hover: rgba(255, 255, 255, 0.08);
+      --geoip-muted: rgba(255, 255, 255, 0.45);
+      --geoip-subtle: rgba(255, 255, 255, 0.35);
+      --code-bg: rgba(255, 255, 255, 0.08);
     }
 
     body {
@@ -71,7 +141,7 @@
       margin-top: 20px;
       padding: 8px 16px;
       background: var(--bg-elevated);
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
       border-radius: 20px;
       font-size: 14px;
       color: var(--text-secondary);
@@ -111,7 +181,7 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
     }
 
     .btn-primary {
@@ -157,7 +227,7 @@
 
     .stat-card {
       background: var(--bg-elevated);
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
       border: 1px solid var(--border);
       border-radius: 18px;
       padding: 24px;
@@ -265,8 +335,7 @@
     }
 
     .node-card {
-      background: var(--bg-elevated);
-      backdrop-filter: saturate(180%) blur(20px);
+      background: var(--bg-elevated-solid);
       border: 1px solid var(--border);
       border-radius: 18px;
       padding: 28px;
@@ -341,17 +410,17 @@
 
     .status-badge.healthy {
       background: rgba(52, 199, 89, 0.15);
-      color: #1f9b47;
+      color: var(--success-text);
     }
 
     .status-badge.warning {
       background: rgba(255, 149, 0, 0.15);
-      color: #c27100;
+      color: var(--warning-text);
     }
 
     .status-badge.error {
       background: rgba(255, 59, 48, 0.15);
-      color: #d32f2f;
+      color: var(--error-text);
     }
 
     .status-badge.blacklisted {
@@ -437,17 +506,6 @@
       margin-bottom: 24px;
     }
 
-    .metric {
-      background: rgba(0, 0, 0, 0.02);
-      border-radius: 12px;
-      padding: 16px;
-      transition: all 0.2s;
-    }
-
-    .metric:hover {
-      background: rgba(0, 0, 0, 0.04);
-    }
-
     .metric-label {
       font-size: 12px;
       color: var(--text-secondary);
@@ -487,8 +545,7 @@
       position: fixed;
       top: 24px;
       right: 24px;
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
       border: 1px solid var(--border);
       padding: 16px 24px;
       border-radius: 16px;
@@ -528,7 +585,7 @@
       text-align: center;
       padding: 80px 40px;
       background: var(--bg-elevated);
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
       border: 1px solid var(--border);
       border-radius: 18px;
     }
@@ -570,7 +627,7 @@
 
     .login-modal {
       background: var(--bg-elevated);
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
       border: 1px solid var(--border);
       border-radius: 24px;
       padding: 48px;
@@ -632,7 +689,6 @@
       border-radius: 12px;
       font-size: 16px;
       font-family: var(--sf-pro);
-      background: rgba(255, 255, 255, 0.8);
       transition: all 0.2s;
     }
 
@@ -667,7 +723,6 @@
 
     .tab {
       padding: 12px 24px;
-      border: none;
       border-radius: 980px;
       font-size: 15px;
       font-weight: 500;
@@ -729,7 +784,7 @@
     }
 
     .btn-warning:hover {
-      background: #e68600;
+      filter: brightness(0.9);
       transform: translateY(-1px);
       box-shadow: 0 4px 16px rgba(255, 149, 0, 0.4);
     }
@@ -740,7 +795,7 @@
     }
 
     .btn-danger:hover {
-      background: #e62e24;
+      filter: brightness(0.9);
     }
 
     .reload-warning {
@@ -762,7 +817,7 @@
 
     .config-node-card {
       background: var(--bg-elevated);
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
       border: 1px solid var(--border);
       border-radius: 18px;
       padding: 24px;
@@ -842,7 +897,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-color: #ccc;
+      background-color: var(--toggle-bg);
       transition: 0.3s;
       border-radius: 28px;
     }
@@ -875,7 +930,7 @@
       left: 0;
       right: 0;
       background: var(--bg-elevated);
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
       border-bottom: 1px solid var(--border);
       padding: 16px 24px;
       z-index: 1500;
@@ -937,7 +992,7 @@
     /* Subscription Management */
     .sub-card {
       background: var(--bg-elevated);
-      backdrop-filter: saturate(180%) blur(20px);
+      backdrop-filter: var(--backdrop);
       border: 1px solid var(--border);
       border-radius: 18px;
       padding: 20px 24px;
@@ -1073,6 +1128,115 @@
       gap: 16px;
     }
 
+    /* Icon-only button (settings, theme toggle) */
+    .btn-icon-only {
+      padding: 0;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Stat value color variants */
+    .stat-value-success { color: var(--success); }
+    .stat-value-primary { color: var(--primary); }
+    .stat-value-error { color: var(--error); }
+
+    /* GeoIP status classes */
+    .geoip-status-enabled {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--success);
+    }
+
+    .geoip-status-disabled {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--geoip-muted);
+    }
+
+    .geoip-status-warning {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--warning);
+    }
+
+    .geoip-status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .geoip-info-grid {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 12px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .geoip-info-value {
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+
+    .geoip-hint {
+      margin-top: 8px;
+      color: var(--geoip-subtle);
+      font-size: 12px;
+    }
+
+    .geoip-code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .geoip-section {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .geoip-section-content {
+      background: var(--metric-bg);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* Dark mode adaptations for metric backgrounds */
+    .metric {
+      background: var(--metric-bg);
+      border-radius: 12px;
+      padding: 16px;
+      transition: all 0.2s;
+    }
+
+    .metric:hover {
+      background: var(--metric-bg-hover);
+    }
+
+    /* Form input dark mode */
+    .form-input {
+      background: var(--input-bg);
+    }
+
+    /* Toast dark mode */
+    .toast {
+      background: var(--bg-elevated-solid);
+    }
+
     /* Responsive */
     @media (max-width: 768px) {
       .app { padding: 24px 16px; }
@@ -1101,7 +1265,23 @@
           <span class="status-dot"></span>
           <span id="lastUpdate">正在加载...</span>
         </div>
-        <button class="btn btn-secondary" onclick="showSettingsModal()" style="padding: 0; border-radius: 50%; width: 36px; height: 36px; min-width: 36px; display: flex; align-items: center; justify-content: center;" title="系统设置">
+        <button class="btn btn-secondary btn-icon-only" onclick="toggleTheme()" id="themeToggleBtn" title="切换主题">
+          <svg id="themeIconMoon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <svg id="themeIconSun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+        <button class="btn btn-secondary btn-icon-only" onclick="showSettingsModal()" title="系统设置">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -1154,15 +1334,15 @@
       </div>
       <div class="stat-card">
         <div class="stat-label">健康节点</div>
-        <div class="stat-value" style="color: var(--success);" id="healthyNodes">0</div>
+        <div class="stat-value stat-value-success" id="healthyNodes">0</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">活跃连接</div>
-        <div class="stat-value" style="color: var(--primary);" id="activeConnections">0</div>
+        <div class="stat-value stat-value-primary" id="activeConnections">0</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">拉黑节点</div>
-        <div class="stat-value" style="color: var(--error);" id="blacklistedNodes">0</div>
+        <div class="stat-value stat-value-error" id="blacklistedNodes">0</div>
       </div>
       <div class="stat-card" id="subscriptionCard" style="display: none;">
         <div class="stat-label">订阅状态</div>
@@ -1319,7 +1499,7 @@
         </div>
         <div class="stat-card">
           <div class="stat-label">总成功次数</div>
-          <div class="stat-value" style="color: var(--success);" id="debugTotalSuccess">0</div>
+          <div class="stat-value stat-value-success" id="debugTotalSuccess">0</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">整体成功率</div>
@@ -1441,9 +1621,9 @@
         </div>
         <p class="form-help" style="margin-top: -8px;">启用后所有节点将忽略 SSL 证书错误，修改后需重载生效</p>
         <!-- GeoIP 状态信息（只读） -->
-        <div id="geoipStatusSection" class="form-group" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.06);">
+        <div id="geoipStatusSection" class="form-group geoip-section">
           <label class="form-label">GeoIP 地域识别</label>
-          <div id="geoipStatusContent" style="background: rgba(255,255,255,0.03); border-radius: 8px; padding: 12px; font-size: 13px; line-height: 1.6;"></div>
+          <div id="geoipStatusContent" class="geoip-section-content"></div>
         </div>
         <div id="settingsError" class="login-error"></div>
         <div class="modal-buttons">
@@ -1486,13 +1666,43 @@
     let isAutoRefresh = true;
     let isAuthenticated = false;
 
+    // Cached DOM element references
+    const $ = id => document.getElementById(id);
+    const dom = {
+      loginOverlay: $('loginOverlay'),
+      toast: $('toast'),
+      toastMessage: $('toastMessage'),
+      totalNodes: $('totalNodes'),
+      healthyNodes: $('healthyNodes'),
+      activeConnections: $('activeConnections'),
+      blacklistedNodes: $('blacklistedNodes'),
+      lastUpdate: $('lastUpdate'),
+      probeProgress: $('probeProgress'),
+      probeProgressFill: $('probeProgressFill'),
+      probeProgressStats: $('probeProgressStats'),
+      probeSuccessCount: $('probeSuccessCount'),
+      probeFailedCount: $('probeFailedCount'),
+      probeCurrentNode: $('probeCurrentNode'),
+      probeAllBtn: $('probeAllBtn'),
+      regionStats: $('regionStats'),
+      regionFilter: $('regionFilter'),
+      nodesContainer: $('nodesContainer'),
+      emptyState: $('emptyState'),
+      subscriptionCard: $('subscriptionCard'),
+      refreshSubBtn: $('refreshSubBtn'),
+      subscriptionStatus: $('subscriptionStatus'),
+      subscriptionTrend: $('subscriptionTrend'),
+      themeIconMoon: $('themeIconMoon'),
+      themeIconSun: $('themeIconSun'),
+    };
+
     // 检查是否需要登录
     async function checkAuth() {
       try {
         const res = await fetch('/api/nodes');
         if (res.status === 401) {
           // 需要登录
-          document.getElementById('loginOverlay').classList.add('show');
+          dom.loginOverlay.classList.add('show');
           return false;
         }
         return true;
@@ -1521,7 +1731,7 @@
 
         if (res.ok) {
           isAuthenticated = true;
-          document.getElementById('loginOverlay').classList.remove('show');
+          dom.loginOverlay.classList.remove('show');
           showToast('登录成功！', 'success');
           refresh();
         } else {
@@ -1540,7 +1750,7 @@
         const res = await fetch('/api/export');
         if (res.status === 401) {
           showToast('请先登录', 'error');
-          document.getElementById('loginOverlay').classList.add('show');
+          dom.loginOverlay.classList.add('show');
           return;
         }
         if (!res.ok) {
@@ -1600,20 +1810,17 @@
     }
 
     function showToast(message, type = 'success') {
-      const toast = document.getElementById('toast');
-      const toastMessage = document.getElementById('toastMessage');
-      toast.className = `toast ${type} show`;
-      toastMessage.textContent = message;
-      setTimeout(() => toast.classList.remove('show'), 3000);
+      dom.toast.className = `toast ${type} show`;
+      dom.toastMessage.textContent = message;
+      setTimeout(() => dom.toast.classList.remove('show'), 3000);
     }
 
     async function refresh() {
       try {
         const res = await fetch('/api/nodes');
         if (res.status === 401) {
-          // 需要登录
           isAuthenticated = false;
-          document.getElementById('loginOverlay').classList.add('show');
+          dom.loginOverlay.classList.add('show');
           stopAutoRefresh();
           return;
         }
@@ -1621,7 +1828,7 @@
         const data = await res.json();
         render(data.nodes || []);
         updateStats(data);
-        document.getElementById('lastUpdate').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
+        dom.lastUpdate.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
       } catch (err) {
         showToast('刷新失败: ' + err.message, 'error');
       }
@@ -1632,36 +1839,32 @@
       const nodes = payload.nodes || [];
       const totalNodesRaw = Number(payload.total_nodes);
       const totalNodes = Number.isFinite(totalNodesRaw) ? totalNodesRaw : nodes.length;
-      document.getElementById('totalNodes').textContent = totalNodes;
-      document.getElementById('healthyNodes').textContent = nodes.filter(n => !n.blacklisted && n.initial_check_done && n.available).length;
-      document.getElementById('activeConnections').textContent = nodes.reduce((sum, n) => sum + (n.active_connections || 0), 0);
-      document.getElementById('blacklistedNodes').textContent = nodes.filter(n => n.blacklisted).length;
+      dom.totalNodes.textContent = totalNodes;
+      dom.healthyNodes.textContent = nodes.filter(n => !n.blacklisted && n.initial_check_done && n.available).length;
+      dom.activeConnections.textContent = nodes.reduce((sum, n) => sum + (n.active_connections || 0), 0);
+      dom.blacklistedNodes.textContent = nodes.filter(n => n.blacklisted).length;
 
       // Update region statistics
       const regionStats = payload.region_stats || {};
       const regionHealthy = payload.region_healthy || {};
       const hasRegionData = Object.keys(regionStats).length > 0;
 
-      // Show/hide region stats section
-      const regionStatsEl = document.getElementById('regionStats');
-      const regionFilterEl = document.getElementById('regionFilter');
       if (hasRegionData) {
-        regionStatsEl.style.display = 'grid';
-        regionFilterEl.style.display = 'flex';
+        dom.regionStats.style.display = 'grid';
+        dom.regionFilter.style.display = 'flex';
 
-        // Update each region
         const regions = ['jp', 'kr', 'us', 'hk', 'tw', 'other'];
         regions.forEach(region => {
           const count = regionStats[region] || 0;
           const healthy = regionHealthy[region] || 0;
-          const valueEl = document.getElementById('region' + region.toUpperCase());
-          const healthyEl = document.getElementById('region' + region.toUpperCase() + 'Healthy');
+          const valueEl = $('region' + region.toUpperCase());
+          const healthyEl = $('region' + region.toUpperCase() + 'Healthy');
           if (valueEl) valueEl.textContent = count;
           if (healthyEl) healthyEl.textContent = healthy + ' 健康';
         });
       } else {
-        regionStatsEl.style.display = 'none';
-        regionFilterEl.style.display = 'none';
+        dom.regionStats.style.display = 'none';
+        dom.regionFilter.style.display = 'none';
       }
     }
 
@@ -1838,24 +2041,17 @@
       }
 
       isProbing = true;
-      const btn = document.getElementById('probeAllBtn');
+      const btn = dom.probeAllBtn;
       btn.disabled = true;
       btn.textContent = '探测中...';
 
       // 显示进度条
-      const progressEl = document.getElementById('probeProgress');
-      const progressFill = document.getElementById('probeProgressFill');
-      const progressStats = document.getElementById('probeProgressStats');
-      const successCount = document.getElementById('probeSuccessCount');
-      const failedCount = document.getElementById('probeFailedCount');
-      const currentNode = document.getElementById('probeCurrentNode');
-
-      progressEl.classList.add('show');
-      progressFill.style.width = '0%';
-      progressStats.textContent = '0 / 0';
-      successCount.textContent = '0';
-      failedCount.textContent = '0';
-      currentNode.textContent = '准备中...';
+      dom.probeProgress.classList.add('show');
+      dom.probeProgressFill.style.width = '0%';
+      dom.probeProgressStats.textContent = '0 / 0';
+      dom.probeSuccessCount.textContent = '0';
+      dom.probeFailedCount.textContent = '0';
+      dom.probeCurrentNode.textContent = '准备中...';
 
       try {
         const response = await fetch('/api/nodes/probe-all', { method: 'POST' });
@@ -1889,38 +2085,32 @@
         btn.disabled = false;
         btn.textContent = '⚡ 探测全部';
         setTimeout(() => {
-          progressEl.classList.remove('show');
+          dom.probeProgress.classList.remove('show');
           refresh();
         }, 2000);
       }
     }
 
     function handleProbeEvent(data) {
-      const progressFill = document.getElementById('probeProgressFill');
-      const progressStats = document.getElementById('probeProgressStats');
-      const successCountEl = document.getElementById('probeSuccessCount');
-      const failedCountEl = document.getElementById('probeFailedCount');
-      const currentNode = document.getElementById('probeCurrentNode');
-
       switch (data.type) {
         case 'start':
-          progressStats.textContent = `0 / ${data.total}`;
-          currentNode.textContent = '开始探测...';
+          dom.probeProgressStats.textContent = `0 / ${data.total}`;
+          dom.probeCurrentNode.textContent = '开始探测...';
           break;
         case 'progress':
-          progressFill.style.width = `${data.progress}%`;
-          progressStats.textContent = `${data.current} / ${data.total}`;
+          dom.probeProgressFill.style.width = `${data.progress}%`;
+          dom.probeProgressStats.textContent = `${data.current} / ${data.total}`;
           if (data.error) {
-            failedCountEl.textContent = parseInt(failedCountEl.textContent) + 1;
-            currentNode.textContent = `❌ ${data.name}: ${data.error}`;
+            dom.probeFailedCount.textContent = parseInt(dom.probeFailedCount.textContent) + 1;
+            dom.probeCurrentNode.textContent = `❌ ${data.name}: ${data.error}`;
           } else {
-            successCountEl.textContent = parseInt(successCountEl.textContent) + 1;
-            currentNode.textContent = `✅ ${data.name}: ${data.latency}ms`;
+            dom.probeSuccessCount.textContent = parseInt(dom.probeSuccessCount.textContent) + 1;
+            dom.probeCurrentNode.textContent = `✅ ${data.name}: ${data.latency}ms`;
           }
           break;
         case 'complete':
-          progressFill.style.width = '100%';
-          currentNode.textContent = `完成！成功 ${data.success}，失败 ${data.failed}`;
+          dom.probeProgressFill.style.width = '100%';
+          dom.probeCurrentNode.textContent = `完成！成功 ${data.success}，失败 ${data.failed}`;
           showToast(`探测完成！成功 ${data.success} 个，失败 ${data.failed} 个`, 'success');
           break;
       }
@@ -1980,39 +2170,34 @@
     }
 
     function updateSubscriptionUI(data) {
-      const card = document.getElementById('subscriptionCard');
-      const btn = document.getElementById('refreshSubBtn');
-      const statusEl = document.getElementById('subscriptionStatus');
-      const trendEl = document.getElementById('subscriptionTrend');
-
       if (!data.enabled) {
-        card.style.display = 'none';
-        btn.style.display = 'none';
+        dom.subscriptionCard.style.display = 'none';
+        dom.refreshSubBtn.style.display = 'none';
         return;
       }
 
-      card.style.display = 'block';
-      btn.style.display = 'inline-flex';
+      dom.subscriptionCard.style.display = 'block';
+      dom.refreshSubBtn.style.display = 'inline-flex';
 
       if (data.is_refreshing) {
-        statusEl.textContent = '刷新中...';
-        statusEl.style.color = 'var(--warning)';
-        trendEl.textContent = '正在获取订阅...';
+        dom.subscriptionStatus.textContent = '刷新中...';
+        dom.subscriptionStatus.style.color = 'var(--warning)';
+        dom.subscriptionTrend.textContent = '正在获取订阅...';
         return;
       }
 
-      statusEl.textContent = data.node_count || 0;
-      statusEl.style.color = data.last_error ? 'var(--error)' : 'var(--success)';
+      dom.subscriptionStatus.textContent = data.node_count || 0;
+      dom.subscriptionStatus.style.color = data.last_error ? 'var(--error)' : 'var(--success)';
 
       if (data.last_error) {
-        trendEl.textContent = '上次失败: ' + data.last_error;
-        trendEl.style.color = 'var(--error)';
+        dom.subscriptionTrend.textContent = '上次失败: ' + data.last_error;
+        dom.subscriptionTrend.style.color = 'var(--error)';
       } else if (data.last_refresh && data.last_refresh !== '0001-01-01T00:00:00Z') {
-        trendEl.textContent = '上次刷新: ' + formatTime(data.last_refresh);
-        trendEl.style.color = 'var(--success)';
+        dom.subscriptionTrend.textContent = '上次刷新: ' + formatTime(data.last_refresh);
+        dom.subscriptionTrend.style.color = 'var(--success)';
       } else {
-        trendEl.textContent = '等待首次刷新';
-        trendEl.style.color = 'var(--text-secondary)';
+        dom.subscriptionTrend.textContent = '等待首次刷新';
+        dom.subscriptionTrend.style.color = 'var(--text-secondary)';
       }
     }
 
@@ -2071,7 +2256,7 @@
         const res = await fetch('/api/debug');
         if (res.status === 401) {
           showToast('请先登录', 'error');
-          document.getElementById('loginOverlay').classList.add('show');
+          dom.loginOverlay.classList.add('show');
           return;
         }
         if (!res.ok) throw new Error('加载失败');
@@ -2191,7 +2376,7 @@
 
       if (!modeSupportsGeoIP) {
         container.innerHTML = `
-          <div style="display:flex;align-items:center;gap:8px;color:#f0ad4e;">
+          <div class="geoip-status-warning">
             <span style="font-size:16px;">&#9888;</span>
             <span>当前模式为 <strong>${mode || '未知'}</strong>，GeoIP 仅在 pool 或 hybrid 模式下可用</span>
           </div>`;
@@ -2200,12 +2385,12 @@
 
       if (!data.geoip_enabled) {
         container.innerHTML = `
-          <div style="display:flex;align-items:center;gap:8px;color:rgba(255,255,255,0.45);">
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#6c757d;"></span>
+          <div class="geoip-status-disabled">
+            <span class="geoip-status-dot" style="background:#6c757d;"></span>
             <span>未启用</span>
           </div>
-          <div style="margin-top:8px;color:rgba(255,255,255,0.35);font-size:12px;">
-            在配置文件中设置 <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;">geoip.enabled: true</code> 并提供 GeoLite2 数据库路径以启用地域分流
+          <div class="geoip-hint">
+            在配置文件中设置 <code class="geoip-code">geoip.enabled: true</code> 并提供 GeoLite2 数据库路径以启用地域分流
           </div>`;
         return;
       }
@@ -2213,13 +2398,13 @@
       const dbPath = data.geoip_database_path || '未配置';
       const autoUpdate = data.geoip_auto_update ? '已启用' : '未启用';
       container.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;color:#5cb85c;">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#5cb85c;"></span>
+        <div class="geoip-status-enabled">
+          <span class="geoip-status-dot"></span>
           <span>已启用</span>
         </div>
-        <div style="margin-top:8px;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;color:rgba(255,255,255,0.5);">
-          <span>数据库路径</span><span style="color:rgba(255,255,255,0.7);word-break:break-all;">${dbPath}</span>
-          <span>自动更新</span><span style="color:rgba(255,255,255,0.7);">${autoUpdate}</span>
+        <div class="geoip-info-grid">
+          <span>数据库路径</span><span class="geoip-info-value">${dbPath}</span>
+          <span>自动更新</span><span class="geoip-info-value">${autoUpdate}</span>
         </div>`;
     }
 
@@ -2291,7 +2476,7 @@
         const res = await fetch('/api/nodes/config');
         if (res.status === 401) {
           showToast('请先登录', 'error');
-          document.getElementById('loginOverlay').classList.add('show');
+          dom.loginOverlay.classList.add('show');
           return;
         }
         if (!res.ok) throw new Error('加载失败');
@@ -2362,9 +2547,8 @@
     }
 
     function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML.replace(/"/g, '&quot;');
+      const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+      return String(text).replace(/[&<>"']/g, m => map[m]);
     }
 
     // 显示添加节点弹窗
@@ -2713,6 +2897,43 @@
         showToast('刷新失败: ' + err.message, 'error');
       }
     }
+
+    // ========== 主题切换 ==========
+
+    function isDarkMode() {
+      return document.body.classList.contains('dark-mode') ||
+        (!document.body.classList.contains('dark-mode') && !localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+
+    function updateThemeIcon() {
+      const dark = isDarkMode();
+      dom.themeIconMoon.style.display = dark ? 'none' : 'block';
+      dom.themeIconSun.style.display = dark ? 'block' : 'none';
+    }
+
+    function toggleTheme() {
+      const body = document.body;
+      if (body.classList.contains('dark-mode')) {
+        body.classList.remove('dark-mode');
+        localStorage.setItem('theme', 'light');
+      } else {
+        body.classList.add('dark-mode');
+        localStorage.setItem('theme', 'dark');
+      }
+      updateThemeIcon();
+    }
+
+    // Apply saved theme on load
+    (function initTheme() {
+      const saved = localStorage.getItem('theme');
+      if (saved === 'dark') {
+        document.body.classList.add('dark-mode');
+      } else if (saved === 'light') {
+        document.body.classList.remove('dark-mode');
+      }
+      // If no saved preference, system preference applies via CSS @media
+      updateThemeIcon();
+    })();
 
     // 初始化
     (async function init() {

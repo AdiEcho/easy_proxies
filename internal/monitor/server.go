@@ -79,6 +79,9 @@ type Server struct {
 	srv    *http.Server
 	logger *log.Logger
 
+	// Cached embedded HTML (read once at startup)
+	cachedHTML []byte
+
 	// Session management
 	sessionMu  sync.RWMutex
 	sessions   map[string]*Session
@@ -106,10 +109,18 @@ func NewServer(cfg Config, mgr *Manager, logger *log.Logger) *Server {
 		maxConcurrentProbes = 10
 	}
 
+	// Pre-read embedded HTML at startup
+	cachedHTML, err := embeddedFS.ReadFile("assets/index.html")
+	if err != nil {
+		logger.Printf("❌ Failed to read embedded index.html: %v", err)
+		return nil
+	}
+
 	s := &Server{
 		cfg:        cfg,
 		mgr:        mgr,
 		logger:     logger,
+		cachedHTML: cachedHTML,
 		sessions:   make(map[string]*Session),
 		sessionTTL: 24 * time.Hour,
 		probeSem:   semaphore.NewWeighted(maxConcurrentProbes),
@@ -227,13 +238,8 @@ func (s *Server) Shutdown(ctx context.Context) {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	data, err := embeddedFS.ReadFile("assets/index.html")
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(data)
+	_, _ = w.Write(s.cachedHTML)
 }
 
 func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
@@ -241,23 +247,28 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	// 只返回初始检查通过的可用节点
-	filtered := s.mgr.SnapshotFiltered(true)
+	// Single snapshot, filter in memory
 	allNodes := s.mgr.Snapshot()
 	totalNodes := len(allNodes)
 
-	// Calculate region statistics
+	filtered := make([]Snapshot, 0, totalNodes)
 	regionStats := make(map[string]int)
 	regionHealthy := make(map[string]int)
+
 	for _, snap := range allNodes {
 		region := snap.Region
 		if region == "" {
 			region = "other"
 		}
 		regionStats[region]++
-		// Count healthy nodes per region
-		if snap.InitialCheckDone && snap.Available && !snap.Blacklisted {
+
+		isHealthy := snap.InitialCheckDone && snap.Available && !snap.Blacklisted
+		if isHealthy {
 			regionHealthy[region]++
+		}
+		// Filter: keep nodes that haven't failed initial check
+		if !snap.InitialCheckDone || snap.Available {
+			filtered = append(filtered, snap)
 		}
 	}
 
@@ -378,15 +389,36 @@ func (s *Server) handleProbeAll(w http.ResponseWriter, r *http.Request) {
 	// Get all nodes
 	snapshots := s.mgr.Snapshot()
 	total := len(snapshots)
-	if total == 0 {
-		fmt.Fprintf(w, "data: %s\n\n", `{"type":"complete","total":0,"success":0,"failed":0}`)
+
+	// probeEvent is the SSE JSON payload for probe-all progress.
+	type probeEvent struct {
+		Type     string  `json:"type"`
+		Tag      string  `json:"tag,omitempty"`
+		Name     string  `json:"name,omitempty"`
+		Latency  int64   `json:"latency,omitempty"`
+		Status   string  `json:"status,omitempty"`
+		Error    string  `json:"error,omitempty"`
+		Current  int     `json:"current,omitempty"`
+		Total    int     `json:"total"`
+		Progress float64 `json:"progress,omitempty"`
+		Success  int     `json:"success,omitempty"`
+		Failed   int     `json:"failed,omitempty"`
+	}
+
+	// Helper to send an SSE event as properly marshaled JSON.
+	sendEvent := func(evt probeEvent) {
+		eventBytes, _ := json.Marshal(evt)
+		fmt.Fprintf(w, "data: %s\n\n", eventBytes)
 		flusher.Flush()
+	}
+
+	if total == 0 {
+		sendEvent(probeEvent{Type: "complete", Total: 0})
 		return
 	}
 
 	// Send start event
-	fmt.Fprintf(w, "data: %s\n\n", fmt.Sprintf(`{"type":"start","total":%d}`, total))
-	flusher.Flush()
+	sendEvent(probeEvent{Type: "start", Total: total})
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
@@ -467,22 +499,26 @@ func (s *Server) handleProbeAll(w http.ResponseWriter, r *http.Request) {
 			status = "error"
 		}
 
-		eventData := fmt.Sprintf(`{"type":"progress","tag":"%s","name":"%s","latency":%d,"status":"%s","error":"%s","current":%d,"total":%d,"progress":%.1f}`,
-			result.tag, result.name, result.latency, status, result.err, count, total, progress)
-		fmt.Fprintf(w, "data: %s\n\n", eventData)
-		flusher.Flush()
+		sendEvent(probeEvent{
+			Type:     "progress",
+			Tag:      result.tag,
+			Name:     result.name,
+			Latency:  result.latency,
+			Status:   status,
+			Error:    result.err,
+			Current:  count,
+			Total:    total,
+			Progress: progress,
+		})
 	}
 
 	// Send complete event
-	fmt.Fprintf(w, "data: %s\n\n", fmt.Sprintf(`{"type":"complete","total":%d,"success":%d,"failed":%d}`, total, successCount, failedCount))
-	flusher.Flush()
+	sendEvent(probeEvent{Type: "complete", Total: total, Success: successCount, Failed: failedCount})
 }
 
 func writeJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(payload)
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 // withAuth 认证中间件，如果配置了密码则需要验证
@@ -829,12 +865,29 @@ func (s *Server) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
 		// Build subscription info with node stats from monitor
 		allNodes := s.mgr.Snapshot()
 
-		// First pass: compute base aliases
+		// Pre-compute per-subscription stats in O(n) instead of O(n*m)
+		type subStats struct {
+			total int
+			alive int
+		}
+		statsByURL := make(map[string]*subStats, len(subs))
+		for _, sub := range subs {
+			statsByURL[sub.URL] = &subStats{}
+		}
+		for _, snap := range allNodes {
+			if st, ok := statsByURL[snap.SubscriptionURL]; ok {
+				st.total++
+				if snap.InitialCheckDone && snap.Available && !snap.Blacklisted {
+					st.alive++
+				}
+			}
+		}
+
+		// Build aliases
 		type subEntry struct {
-			sub        config.SubscriptionSource
-			baseAlias  string
-			nodeCount  int
-			aliveCount int
+			sub       config.SubscriptionSource
+			baseAlias string
+			stats     *subStats
 		}
 		entries := make([]subEntry, 0, len(subs))
 		for _, sub := range subs {
@@ -842,17 +895,7 @@ func (s *Server) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
 			if alias == "" {
 				alias = config.DefaultAliasFromURL(sub.URL)
 			}
-			nodeCount := 0
-			aliveCount := 0
-			for _, snap := range allNodes {
-				if snap.SubscriptionURL == sub.URL {
-					nodeCount++
-					if snap.InitialCheckDone && snap.Available && !snap.Blacklisted {
-						aliveCount++
-					}
-				}
-			}
-			entries = append(entries, subEntry{sub: sub, baseAlias: alias, nodeCount: nodeCount, aliveCount: aliveCount})
+			entries = append(entries, subEntry{sub: sub, baseAlias: alias, stats: statsByURL[sub.URL]})
 		}
 
 		// Second pass: deduplicate aliases by appending incrementing numbers
@@ -873,14 +916,14 @@ func (s *Server) handleSubscriptions(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			aliveRate := float64(0)
-			if e.nodeCount > 0 {
-				aliveRate = float64(e.aliveCount) / float64(e.nodeCount) * 100
+			if e.stats.total > 0 {
+				aliveRate = float64(e.stats.alive) / float64(e.stats.total) * 100
 			}
 			subInfos = append(subInfos, map[string]any{
 				"url":         e.sub.URL,
 				"alias":       alias,
-				"node_count":  e.nodeCount,
-				"alive_count": e.aliveCount,
+				"node_count":  e.stats.total,
+				"alive_count": e.stats.alive,
 				"alive_rate":  aliveRate,
 			})
 		}
