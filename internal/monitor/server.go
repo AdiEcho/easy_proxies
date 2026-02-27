@@ -982,7 +982,7 @@ func (s *Server) handleSubscriptionItem(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, map[string]any{"error": err.Error()})
 			return
 		}
-		writeJSON(w, map[string]any{"message": "订阅源已删除"})
+		writeJSON(w, map[string]any{"message": "订阅源及关联节点已删除"})
 
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)

@@ -620,7 +620,7 @@ func (m *Manager) UpdateSubscription(oldURL string, sub config.SubscriptionSourc
 	return m.baseCfg.SaveSubscriptions()
 }
 
-// DeleteSubscription removes a subscription source by URL.
+// DeleteSubscription removes a subscription source by URL and cleans up its nodes.
 func (m *Manager) DeleteSubscription(subURL string) error {
 	m.mu.Lock()
 	found := false
@@ -637,7 +637,82 @@ func (m *Manager) DeleteSubscription(subURL string) error {
 	if !found {
 		return fmt.Errorf("订阅源不存在: %s", subURL)
 	}
-	return m.baseCfg.SaveSubscriptions()
+
+	if err := m.baseCfg.SaveSubscriptions(); err != nil {
+		return fmt.Errorf("保存配置失败: %w", err)
+	}
+
+	// Clean up nodes belonging to the deleted subscription
+	m.removeSubscriptionNodes(subURL)
+
+	return nil
+}
+
+// removeSubscriptionNodes removes nodes from a deleted subscription,
+// updates nodes.txt, and reloads boxmgr.
+func (m *Manager) removeSubscriptionNodes(subURL string) {
+	// Prevent conflicts with concurrent refresh operations
+	m.refreshMu.Lock()
+	defer m.refreshMu.Unlock()
+
+	currentNodes, err := m.boxMgr.ListConfigNodes(context.Background())
+	if err != nil {
+		m.logger.Warnf("failed to get current nodes for cleanup: %v", err)
+		return
+	}
+
+	// Filter out nodes belonging to the deleted subscription
+	var remaining []config.NodeConfig
+	removed := 0
+	for _, node := range currentNodes {
+		if node.SubscriptionURL == subURL {
+			removed++
+			continue
+		}
+		remaining = append(remaining, node)
+	}
+
+	if removed == 0 {
+		m.logger.Infof("no nodes found for subscription %q, skipping cleanup", subURL)
+		return
+	}
+
+	m.logger.Infof("removing %d nodes from deleted subscription %q", removed, subURL)
+
+	// Write remaining subscription nodes to nodes.txt
+	var subNodes []config.NodeConfig
+	for _, node := range remaining {
+		if node.SubscriptionURL != "" {
+			subNodes = append(subNodes, node)
+		}
+	}
+
+	nodesFilePath := m.getNodesFilePath()
+	if err := m.writeNodesToFile(nodesFilePath, subNodes); err != nil {
+		m.logger.Errorf("failed to update nodes.txt after subscription delete: %v", err)
+		return
+	}
+
+	// Update hash and modification time tracking
+	newHash := m.computeNodesHash(subNodes)
+	m.mu.Lock()
+	m.lastSubHash = newHash
+	if info, statErr := os.Stat(nodesFilePath); statErr == nil {
+		m.lastNodesModTime = info.ModTime()
+	}
+	m.status.NodeCount = len(remaining)
+	m.status.NodesModified = false
+	m.mu.Unlock()
+
+	// Reload boxmgr with remaining nodes (preserving port assignments)
+	portMap := m.boxMgr.CurrentPortMap()
+	newCfg := m.createNewConfig(remaining)
+	if err := m.boxMgr.ReloadWithPortMap(newCfg, portMap); err != nil {
+		m.logger.Errorf("failed to reload after subscription delete: %v", err)
+		return
+	}
+
+	m.logger.Infof("subscription cleanup completed, %d nodes remaining", len(remaining))
 }
 
 // RefreshOne fetches nodes from a single subscription URL and returns the count.
