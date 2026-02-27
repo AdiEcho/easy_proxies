@@ -492,7 +492,7 @@ subscription_refresh:
 # docker-compose.yml
 services:
   easy-proxies:
-    image: ghcr.io/jasonwong1991/easy_proxies:latest
+    image: ghcr.io/adiecho/easy_proxies:latest
     container_name: easy-proxies
     restart: unless-stopped
     network_mode: host
@@ -513,7 +513,7 @@ services:
 # docker-compose.yml
 services:
   easy-proxies:
-    image: ghcr.io/jasonwong1991/easy_proxies:latest
+    image: ghcr.io/adiecho/easy_proxies:latest
     container_name: easy-proxies
     restart: unless-stopped
     ports:

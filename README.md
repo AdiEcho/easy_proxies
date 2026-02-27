@@ -491,7 +491,7 @@ Use `network_mode: host` for direct host network access:
 # docker-compose.yml
 services:
   easy-proxies:
-    image: ghcr.io/jasonwong1991/easy_proxies:latest
+    image: ghcr.io/adiecho/easy_proxies:latest
     container_name: easy-proxies
     restart: unless-stopped
     network_mode: host
@@ -512,7 +512,7 @@ Manually specify port mappings:
 # docker-compose.yml
 services:
   easy-proxies:
-    image: ghcr.io/jasonwong1991/easy_proxies:latest
+    image: ghcr.io/adiecho/easy_proxies:latest
     container_name: easy-proxies
     restart: unless-stopped
     ports:
