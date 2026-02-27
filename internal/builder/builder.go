@@ -100,11 +100,24 @@ func Build(cfg *config.Config) (option.Options, error) {
 			regionInfo := geoLookup.LookupURI(node.URI)
 			meta.Region = regionInfo.Code
 			meta.Country = regionInfo.Country
-			regionMembers[regionInfo.Code] = append(regionMembers[regionInfo.Code], tag)
+			// Fallback: if GeoIP returned "other", try parsing node name
+			if regionInfo.Code == geoip.RegionOther {
+				if nameRegion := geoip.RegionFromName(node.Name); nameRegion != geoip.RegionOther {
+					meta.Region = nameRegion
+					meta.Country = geoip.RegionName(nameRegion)
+				}
+			}
+			regionMembers[meta.Region] = append(regionMembers[meta.Region], tag)
 		} else {
-			meta.Region = geoip.RegionOther
-			meta.Country = "Unknown"
-			regionMembers[geoip.RegionOther] = append(regionMembers[geoip.RegionOther], tag)
+			// No GeoIP database available, try name-based parsing
+			nameRegion := geoip.RegionFromName(node.Name)
+			meta.Region = nameRegion
+			if nameRegion != geoip.RegionOther {
+				meta.Country = geoip.RegionName(nameRegion)
+			} else {
+				meta.Country = "Unknown"
+			}
+			regionMembers[meta.Region] = append(regionMembers[meta.Region], tag)
 		}
 
 		metadata[tag] = meta
@@ -275,7 +288,13 @@ func Build(cfg *config.Config) (option.Options, error) {
 		}
 		log.Println("🌐 GeoIP Region Routing Enabled:")
 		log.Printf("   Access via: http://%s:%d/{region}", geoipListen, geoipPort)
-		log.Println("   Available regions: /jp, /kr, /us, /hk, /tw, /other")
+		var activeRegions []string
+		for _, region := range geoip.AllRegions() {
+			if len(regionMembers[region]) > 0 {
+				activeRegions = append(activeRegions, "/"+region)
+			}
+		}
+		log.Printf("   Available regions: %s", strings.Join(activeRegions, ", "))
 		log.Println("   Default (no path): all nodes pool")
 	}
 

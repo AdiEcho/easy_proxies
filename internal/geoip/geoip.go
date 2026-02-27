@@ -24,6 +24,18 @@ const (
 	RegionUS    = "us"
 	RegionHK    = "hk"
 	RegionTW    = "tw"
+	RegionSG    = "sg"
+	RegionGB    = "gb"
+	RegionDE    = "de"
+	RegionFR    = "fr"
+	RegionNL    = "nl"
+	RegionCA    = "ca"
+	RegionAU    = "au"
+	RegionIN    = "in"
+	RegionRU    = "ru"
+	RegionTR    = "tr"
+	RegionTH    = "th"
+	RegionPH    = "ph"
 	RegionOther = "other"
 )
 
@@ -564,6 +576,30 @@ func isoCodeToRegion(isoCode string) string {
 		return RegionHK
 	case "TW":
 		return RegionTW
+	case "SG":
+		return RegionSG
+	case "GB":
+		return RegionGB
+	case "DE":
+		return RegionDE
+	case "FR":
+		return RegionFR
+	case "NL":
+		return RegionNL
+	case "CA":
+		return RegionCA
+	case "AU":
+		return RegionAU
+	case "IN":
+		return RegionIN
+	case "RU":
+		return RegionRU
+	case "TR":
+		return RegionTR
+	case "TH":
+		return RegionTH
+	case "PH":
+		return RegionPH
 	default:
 		return RegionOther
 	}
@@ -571,7 +607,12 @@ func isoCodeToRegion(isoCode string) string {
 
 // AllRegions returns all supported region codes
 func AllRegions() []string {
-	return []string{RegionJP, RegionKR, RegionUS, RegionHK, RegionTW, RegionOther}
+	return []string{
+		RegionJP, RegionKR, RegionUS, RegionHK, RegionTW,
+		RegionSG, RegionGB, RegionDE, RegionFR, RegionNL,
+		RegionCA, RegionAU, RegionIN, RegionRU, RegionTR,
+		RegionTH, RegionPH, RegionOther,
+	}
 }
 
 // RegionName returns the display name for a region code
@@ -587,6 +628,30 @@ func RegionName(code string) string {
 		return "Hong Kong"
 	case RegionTW:
 		return "Taiwan"
+	case RegionSG:
+		return "Singapore"
+	case RegionGB:
+		return "United Kingdom"
+	case RegionDE:
+		return "Germany"
+	case RegionFR:
+		return "France"
+	case RegionNL:
+		return "Netherlands"
+	case RegionCA:
+		return "Canada"
+	case RegionAU:
+		return "Australia"
+	case RegionIN:
+		return "India"
+	case RegionRU:
+		return "Russia"
+	case RegionTR:
+		return "Turkey"
+	case RegionTH:
+		return "Thailand"
+	case RegionPH:
+		return "Philippines"
 	case RegionOther:
 		return "Other"
 	default:
@@ -607,6 +672,30 @@ func RegionEmoji(code string) string {
 		return "🇭🇰"
 	case RegionTW:
 		return "🇹🇼"
+	case RegionSG:
+		return "🇸🇬"
+	case RegionGB:
+		return "🇬🇧"
+	case RegionDE:
+		return "🇩🇪"
+	case RegionFR:
+		return "🇫🇷"
+	case RegionNL:
+		return "🇳🇱"
+	case RegionCA:
+		return "🇨🇦"
+	case RegionAU:
+		return "🇦🇺"
+	case RegionIN:
+		return "🇮🇳"
+	case RegionRU:
+		return "🇷🇺"
+	case RegionTR:
+		return "🇹🇷"
+	case RegionTH:
+		return "🇹🇭"
+	case RegionPH:
+		return "🇵🇭"
 	case RegionOther:
 		return "🌍"
 	default:
