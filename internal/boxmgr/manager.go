@@ -14,6 +14,7 @@ import (
 
 	"easy_proxies/internal/builder"
 	"easy_proxies/internal/config"
+	"easy_proxies/internal/geoip"
 	"easy_proxies/internal/monitor"
 	"easy_proxies/internal/outbound/pool"
 
@@ -54,6 +55,7 @@ type Manager struct {
 	currentBox    *box.Box
 	monitorMgr    *monitor.Manager
 	monitorServer *monitor.Server
+	geoipRouter   *geoip.Router
 	cfg           *config.Config
 	monitorCfg    monitor.Config
 
@@ -123,6 +125,7 @@ func (m *Manager) Start(ctx context.Context) error {
 				m.logger.Warnf("port %d is in use, reassigning and retrying...", conflictPort)
 				if reassigned := reassignConflictingPort(cfg, conflictPort); reassigned {
 					pool.ResetSharedStateStore() // Reset shared state for rebuild
+					pool.ResetPoolRegistry()
 					continue
 				}
 			}
@@ -156,6 +159,12 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 
 	m.logger.Infof("sing-box instance started with %d nodes", len(cfg.Nodes))
+
+	// Start GeoIP router if enabled and in pool mode
+	if cfg.GeoIP.Enabled && (cfg.Mode == "pool" || cfg.Mode == "hybrid") {
+		m.startGeoIPRouter(cfg)
+	}
+
 	return nil
 }
 
@@ -183,6 +192,9 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 
 	m.logger.Infof("reloading with %d nodes", len(newCfg.Nodes))
 
+	// Stop GeoIP router before rebuilding
+	m.stopGeoIPRouter()
+
 	// For multi-port mode, we must close old instance first to release ports
 	// This causes a brief interruption but avoids port conflicts
 	if oldBox != nil {
@@ -196,6 +208,7 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 
 	// Reset shared state store to ensure clean state for new config
 	pool.ResetSharedStateStore()
+	pool.ResetPoolRegistry()
 
 	// Create and start new box instance with automatic port conflict resolution
 	var instance *box.Box
@@ -214,6 +227,7 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 				m.logger.Warnf("port %d is in use, reassigning and retrying...", conflictPort)
 				if reassigned := reassignConflictingPort(newCfg, conflictPort); reassigned {
 					pool.ResetSharedStateStore()
+					pool.ResetPoolRegistry()
 					continue
 				}
 			}
@@ -231,6 +245,12 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 	m.mu.Unlock()
 
 	m.logger.Infof("reload completed successfully with %d nodes", len(newCfg.Nodes))
+
+	// Restart GeoIP router if enabled
+	if newCfg.GeoIP.Enabled && (newCfg.Mode == "pool" || newCfg.Mode == "hybrid") {
+		m.startGeoIPRouter(newCfg)
+	}
+
 	return nil
 }
 
@@ -266,6 +286,10 @@ func (m *Manager) Close() error {
 	if m.currentBox != nil {
 		err = m.currentBox.Close()
 		m.currentBox = nil
+	}
+	if m.geoipRouter != nil {
+		m.geoipRouter.Stop()
+		m.geoipRouter = nil
 	}
 	if m.monitorServer != nil {
 		m.monitorServer.Shutdown(context.Background())
@@ -449,6 +473,89 @@ func (m *Manager) applyConfigSettings(cfg *config.Config) {
 		m.drainTimeout = defaultDrainTimeout
 	}
 	m.minAvailableNodes = cfg.SubscriptionRefresh.MinAvailableNodes
+}
+
+// dialFuncAdapter wraps a dial function to implement geoip.PoolDialer.
+type dialFuncAdapter func(ctx context.Context, network, address string) (net.Conn, error)
+
+func (f dialFuncAdapter) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return f(ctx, network, address)
+}
+
+// startGeoIPRouter creates and starts the GeoIP router, wiring up region pools.
+func (m *Manager) startGeoIPRouter(cfg *config.Config) {
+	m.stopGeoIPRouter() // stop any existing router
+
+	geoipListen := cfg.GeoIP.Listen
+	if geoipListen == "" {
+		geoipListen = cfg.Listener.Address
+	}
+	geoipPort := cfg.GeoIP.Port
+	if geoipPort == 0 {
+		geoipPort = 2323
+	}
+
+	routerCfg := geoip.RouterConfig{
+		Listen:   geoipListen,
+		Port:     geoipPort,
+		Username: cfg.Listener.Username,
+		Password: cfg.Listener.Password,
+	}
+
+	router := geoip.NewRouter(routerCfg, log.Default())
+
+	// Wire up each region pool
+	wiredRegions := 0
+	for _, region := range geoip.AllRegions() {
+		poolTag := fmt.Sprintf("pool-%s", region)
+		dialFn := pool.GetDialFunc(poolTag)
+		if dialFn != nil {
+			router.SetPool(region, dialFuncAdapter(dialFn))
+			wiredRegions++
+		}
+	}
+
+	// Wire up global pool (all nodes)
+	globalDialFn := pool.GetDialFunc(pool.Tag)
+	if globalDialFn != nil {
+		router.SetGlobalPool(dialFuncAdapter(globalDialFn))
+	}
+
+	if wiredRegions == 0 {
+		m.logger.Warnf("GeoIP router: no region pools found, skipping router start")
+		return
+	}
+
+	m.mu.Lock()
+	ctx := m.baseCtx
+	m.mu.Unlock()
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if err := router.Start(ctx); err != nil {
+		m.logger.Errorf("failed to start GeoIP router: %v", err)
+		return
+	}
+
+	m.mu.Lock()
+	m.geoipRouter = router
+	m.mu.Unlock()
+
+	m.logger.Infof("GeoIP router started with %d region pools on %s:%d", wiredRegions, geoipListen, geoipPort)
+}
+
+// stopGeoIPRouter stops the GeoIP router if running.
+func (m *Manager) stopGeoIPRouter() {
+	m.mu.Lock()
+	router := m.geoipRouter
+	m.geoipRouter = nil
+	m.mu.Unlock()
+
+	if router != nil {
+		router.Stop()
+	}
 }
 
 // defaultLogger is the fallback logger using standard log.

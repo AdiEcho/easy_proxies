@@ -34,6 +34,32 @@ const (
 	modeBalance    = "balance"
 )
 
+// poolRegistry tracks all pool outbound instances by tag for external access (e.g., GeoIP router).
+var poolRegistry sync.Map // map[string]*poolOutbound
+
+// GetDialFunc returns a dialer function for the pool with the given tag.
+// Returns nil if no pool is registered with that tag.
+// The returned function converts a standard (network, address) call into a sing-box DialContext.
+func GetDialFunc(tag string) func(ctx context.Context, network, address string) (net.Conn, error) {
+	v, ok := poolRegistry.Load(tag)
+	if !ok {
+		return nil
+	}
+	p := v.(*poolOutbound)
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		dest := M.ParseSocksaddr(address)
+		return p.DialContext(ctx, network, dest)
+	}
+}
+
+// ResetPoolRegistry clears all registered pool outbounds (used during config reload).
+func ResetPoolRegistry() {
+	poolRegistry.Range(func(key, _ any) bool {
+		poolRegistry.Delete(key)
+		return true
+	})
+}
+
 // Options controls pool outbound behaviour.
 type Options struct {
 	Mode              string
@@ -179,6 +205,8 @@ func (p *poolOutbound) Start(stage adapter.StartStage) error {
 	if err != nil {
 		return err
 	}
+	// Register this pool in the global registry for external access (e.g., GeoIP router)
+	poolRegistry.Store(p.Tag(), p)
 	// 在初始化完成后，立即在后台触发健康检查
 	if p.monitor != nil {
 		go p.probeAllMembersOnStartup()
@@ -370,6 +398,17 @@ func (p *poolOutbound) pickMember(network string) (*memberState, error) {
 		p.mu.Unlock()
 	}
 
+	// Fallback: if all nodes failed health check but are not blacklisted,
+	// use them anyway to avoid complete outage
+	if len(candidates) == 0 {
+		p.mu.Lock()
+		candidates = p.blacklistOnlyMembersLocked(now, network, candidates)
+		p.mu.Unlock()
+		if len(candidates) > 0 {
+			p.logger.Warn("all proxies failed health check, using unhealthy proxies as fallback")
+		}
+	}
+
 	if len(candidates) == 0 {
 		p.putCandidateBuffer(candidates)
 		return nil, E.New("no healthy proxy available")
@@ -384,6 +423,27 @@ func (p *poolOutbound) availableMembersLocked(now time.Time, network string, buf
 	result := buf[:0]
 	for _, member := range p.members {
 		// Check blacklist via shared state (auto-clears if expired)
+		if member.shared != nil && member.shared.isBlacklisted(now) {
+			continue
+		}
+		// Check health check availability via monitor entry
+		// Nodes that haven't been checked yet are still allowed (IsAvailable returns true)
+		if member.entry != nil && !member.entry.IsAvailable() {
+			continue
+		}
+		if network != "" && !common.Contains(member.outbound.Network(), network) {
+			continue
+		}
+		result = append(result, member)
+	}
+	return result
+}
+
+// blacklistOnlyMembersLocked returns members filtered only by blacklist and network,
+// ignoring health check status. Used as a fallback when all nodes fail health checks.
+func (p *poolOutbound) blacklistOnlyMembersLocked(now time.Time, network string, buf []*memberState) []*memberState {
+	result := buf[:0]
+	for _, member := range p.members {
 		if member.shared != nil && member.shared.isBlacklisted(now) {
 			continue
 		}

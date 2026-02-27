@@ -606,3 +606,18 @@ func (h *EntryHandle) MarkAvailable(available bool) {
 	h.ref.available = available
 	h.ref.mu.Unlock()
 }
+
+// IsAvailable returns whether the node should be considered available for selection.
+// Returns true if initial health check hasn't completed yet (untested nodes are allowed).
+// Returns false only when the health check has run and the node failed.
+func (h *EntryHandle) IsAvailable() bool {
+	if h == nil || h.ref == nil {
+		return true
+	}
+	h.ref.mu.RLock()
+	defer h.ref.mu.RUnlock()
+	if !h.ref.initialCheckDone {
+		return true // Not checked yet, assume available
+	}
+	return h.ref.available
+}
