@@ -91,6 +91,9 @@ geoip:
 #   health_check_timeout: 60s   # 新节点健康检查超时
 #   drain_timeout: 30s          # 旧实例排空超时时间
 #   min_available_nodes: 1      # 最少可用节点数，低于此值不切换
+#   user_agent: "mihomo.party/v1.9.2 (clash.meta)"  # 请求订阅时的 User-Agent
+#   max_retries: 3              # 初始加载订阅失败时最大重试次数（指数退避）
+#   retry_interval: 5s          # 重试基础间隔，实际间隔 = retry_interval * 2^attempt，上限 5min
 
 # ═══════════════════════════════════════════════════════════════
 # 节点配置方式（三选一或混合使用）

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,6 +18,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+// DefaultUserAgent is the default User-Agent used for subscription requests.
+const DefaultUserAgent = "mihomo.party/v1.9.2 (clash.meta)"
 
 // SubscriptionSource represents a subscription source with optional alias.
 type SubscriptionSource struct {
@@ -179,6 +183,9 @@ type SubscriptionRefreshConfig struct {
 	HealthCheckTimeout time.Duration `yaml:"health_check_timeout"` // 新节点健康检查超时
 	DrainTimeout       time.Duration `yaml:"drain_timeout"`        // 旧实例排空超时时间
 	MinAvailableNodes  int           `yaml:"min_available_nodes"`  // 最少可用节点数，低于此值不切换
+	UserAgent          string        `yaml:"user_agent"`           // 请求订阅时的 User-Agent，默认 clash.meta
+	MaxRetries         int           `yaml:"max_retries"`          // 初始加载订阅失败时最大重试次数，默认 3
+	RetryInterval      time.Duration `yaml:"retry_interval"`       // 重试基础间隔（指数退避），默认 5s
 }
 
 // NodeSource indicates where a node configuration originated from.
@@ -292,6 +299,15 @@ func (c *Config) normalize() error {
 	if c.SubscriptionRefresh.MinAvailableNodes <= 0 {
 		c.SubscriptionRefresh.MinAvailableNodes = 1
 	}
+	if c.SubscriptionRefresh.UserAgent == "" {
+		c.SubscriptionRefresh.UserAgent = DefaultUserAgent
+	}
+	if c.SubscriptionRefresh.MaxRetries <= 0 {
+		c.SubscriptionRefresh.MaxRetries = 3
+	}
+	if c.SubscriptionRefresh.RetryInterval <= 0 {
+		c.SubscriptionRefresh.RetryInterval = 5 * time.Second
+	}
 
 	// Mark inline nodes with source
 	for idx := range c.Nodes {
@@ -311,23 +327,42 @@ func (c *Config) normalize() error {
 	}
 
 	// Load nodes from subscriptions (highest priority - writes to nodes.txt)
+	// Supports exponential backoff retry when all subscriptions return 0 nodes.
 	if len(c.Subscriptions) > 0 {
 		var subNodes []NodeConfig
 		subTimeout := c.SubscriptionRefresh.Timeout
-		for _, sub := range c.Subscriptions {
-			nodes, err := loadNodesFromSubscription(sub.URL, subTimeout)
-			if err != nil {
-				log.Printf("⚠️ Failed to load subscription %q: %v (skipping)", sub.URL, err)
-				continue
+		userAgent := c.SubscriptionRefresh.UserAgent
+		maxRetries := c.SubscriptionRefresh.MaxRetries
+		retryInterval := c.SubscriptionRefresh.RetryInterval
+
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			subNodes = nil // reset on each attempt
+			for _, sub := range c.Subscriptions {
+				nodes, err := loadNodesFromSubscription(sub.URL, subTimeout, userAgent)
+				if err != nil {
+					log.Printf("⚠️ Failed to load subscription %q: %v (skipping)", sub.URL, err)
+					continue
+				}
+				log.Printf("✅ Loaded %d nodes from subscription %q", len(nodes), sub.URL)
+				for idx := range nodes {
+					nodes[idx].Source = NodeSourceSubscription
+					nodes[idx].SubscriptionURL = sub.URL
+				}
+				subNodes = append(subNodes, nodes...)
 			}
-			log.Printf("✅ Loaded %d nodes from subscription %q", len(nodes), sub.URL)
-			// Tag nodes with subscription source URL
-			for idx := range nodes {
-				nodes[idx].Source = NodeSourceSubscription
-				nodes[idx].SubscriptionURL = sub.URL
+			if len(subNodes) > 0 {
+				break // got nodes, stop retrying
 			}
-			subNodes = append(subNodes, nodes...)
+			if attempt < maxRetries {
+				backoff := retryInterval * time.Duration(math.Pow(2, float64(attempt)))
+				if backoff > 5*time.Minute {
+					backoff = 5 * time.Minute // cap at 5 minutes
+				}
+				log.Printf("⚠️ All subscriptions returned 0 nodes, retrying in %s (%d/%d)", backoff, attempt+1, maxRetries)
+				time.Sleep(backoff)
+			}
 		}
+
 		if len(subNodes) > 0 {
 			// Determine nodes.txt path
 			nodesFilePath := c.NodesFile
@@ -501,6 +536,15 @@ func (c *Config) NormalizeWithPortMap(portMap map[string]uint16) error {
 	if c.SubscriptionRefresh.MinAvailableNodes <= 0 {
 		c.SubscriptionRefresh.MinAvailableNodes = 1
 	}
+	if c.SubscriptionRefresh.UserAgent == "" {
+		c.SubscriptionRefresh.UserAgent = DefaultUserAgent
+	}
+	if c.SubscriptionRefresh.MaxRetries <= 0 {
+		c.SubscriptionRefresh.MaxRetries = 3
+	}
+	if c.SubscriptionRefresh.RetryInterval <= 0 {
+		c.SubscriptionRefresh.RetryInterval = 5 * time.Second
+	}
 
 	if len(c.Nodes) == 0 {
 		return errors.New("config.nodes cannot be empty")
@@ -601,9 +645,12 @@ func loadNodesFromFile(path string) ([]NodeConfig, error) {
 
 // loadNodesFromSubscription fetches and parses nodes from a subscription URL
 // Supports multiple formats: base64 encoded, plain text, clash yaml, etc.
-func loadNodesFromSubscription(subURL string, timeout time.Duration) ([]NodeConfig, error) {
+func loadNodesFromSubscription(subURL string, timeout time.Duration, userAgent string) ([]NodeConfig, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
+	}
+	if userAgent == "" {
+		userAgent = DefaultUserAgent
 	}
 	client := &http.Client{
 		Timeout: timeout,
@@ -615,7 +662,7 @@ func loadNodesFromSubscription(subURL string, timeout time.Duration) ([]NodeConf
 	}
 
 	// Set common headers to avoid being blocked
-	req.Header.Set("User-Agent", "mihomo.party/v1.9.2 (clash.meta)")
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "*/*")
 
 	resp, err := client.Do(req)

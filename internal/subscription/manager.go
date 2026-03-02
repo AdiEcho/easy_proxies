@@ -448,7 +448,7 @@ func (m *Manager) fetchSubscription(subURL string, timeout time.Duration) ([]con
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "mihomo.party/v1.9.2 (clash.meta)")
+	req.Header.Set("User-Agent", m.baseCfg.SubscriptionRefresh.UserAgent)
 	req.Header.Set("Accept", "*/*")
 
 	// Use custom HTTP client with connection pooling
