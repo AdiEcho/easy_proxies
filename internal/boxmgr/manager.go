@@ -210,6 +210,11 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 	pool.ResetSharedStateStore()
 	pool.ResetPoolRegistry()
 
+	// Clear stale monitor entries so removed nodes don't linger
+	if m.monitorMgr != nil {
+		m.monitorMgr.ClearNodes()
+	}
+
 	// Create and start new box instance with automatic port conflict resolution
 	var instance *box.Box
 	maxRetries := 10

@@ -271,6 +271,13 @@ func (m *Manager) Stop() {
 	}
 }
 
+// ClearNodes removes all tracked nodes. Call before reload to prevent stale entries.
+func (m *Manager) ClearNodes() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nodes = make(map[string]*entry)
+}
+
 func parsePort(value string) uint16 {
 	p, err := strconv.Atoi(value)
 	if err != nil || p <= 0 || p > 65535 {

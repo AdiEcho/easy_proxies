@@ -1319,6 +1319,9 @@
         </svg>
         导出节点
       </button>
+      <button class="btn btn-secondary" onclick="showCleanupModal()">
+        🧹 清理异常节点
+      </button>
       <button class="btn btn-secondary" id="refreshSubBtn" onclick="refreshSubscription()" style="display: none;">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <path d="M13.65 2.35A7.958 7.958 0 0 0 8 0C3.58 0 0 3.58 0 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z" fill="currentColor"/>
@@ -1631,6 +1634,31 @@
           <button type="submit" class="btn btn-primary">保存</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- 清理异常节点弹窗 -->
+  <div id="cleanupOverlay" class="login-overlay">
+    <div class="login-modal" style="max-width: 560px;">
+      <div class="login-header">
+        <h2>🧹 清理异常节点</h2>
+        <p>批量删除多次失败的节点</p>
+      </div>
+      <div style="margin-bottom: 16px;">
+        <div class="form-group">
+          <label class="form-label">最小失败次数</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="number" id="cleanupThreshold" class="form-input" value="2" min="1" style="width: 100px;" onchange="scanFailedNodes()" />
+            <button type="button" class="btn btn-secondary btn-sm" onclick="scanFailedNodes()">扫描</button>
+          </div>
+        </div>
+      </div>
+      <div id="cleanupNodeList" style="max-height: 400px; overflow-y: auto; margin-bottom: 16px;"></div>
+      <div id="cleanupError" class="login-error"></div>
+      <div class="modal-buttons">
+        <button type="button" class="btn btn-secondary" onclick="hideCleanupModal()">取消</button>
+        <button type="button" class="btn btn-danger" id="cleanupSubmitBtn" onclick="executeCleanup()" disabled>确认删除</button>
+      </div>
     </div>
   </div>
 
@@ -2895,6 +2923,122 @@
         await loadSubscriptions();
       } catch (err) {
         showToast('刷新失败: ' + err.message, 'error');
+      }
+    }
+
+    // ========== 清理异常节点功能 ==========
+
+    function showCleanupModal() {
+      document.getElementById('cleanupOverlay').classList.add('show');
+      document.getElementById('cleanupThreshold').value = 2;
+      document.getElementById('cleanupNodeList').innerHTML = '';
+      document.getElementById('cleanupSubmitBtn').disabled = true;
+      document.getElementById('cleanupError').classList.remove('show');
+      scanFailedNodes();
+    }
+
+    function hideCleanupModal() {
+      document.getElementById('cleanupOverlay').classList.remove('show');
+    }
+
+    async function scanFailedNodes() {
+      const threshold = parseInt(document.getElementById('cleanupThreshold').value) || 2;
+      const container = document.getElementById('cleanupNodeList');
+      container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">扫描中...</div>';
+      document.getElementById('cleanupSubmitBtn').disabled = true;
+
+      try {
+        const res = await fetch('/api/debug');
+        if (res.status === 401) {
+          showToast('请先登录', 'error');
+          hideCleanupModal();
+          dom.loginOverlay.classList.add('show');
+          return;
+        }
+        if (!res.ok) throw new Error('获取调试数据失败');
+        const data = await res.json();
+        const nodes = (data.nodes || []).filter(n => (n.failure_count || 0) >= threshold);
+
+        if (nodes.length === 0) {
+          container.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:40px 20px;">未找到失败次数 ≥ ' + threshold + ' 的异常节点</div>';
+          return;
+        }
+
+        // Sort by failure count descending
+        nodes.sort((a, b) => (b.failure_count || 0) - (a.failure_count || 0));
+
+        container.innerHTML =
+          '<div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">' +
+            '<span style="font-size:14px;color:var(--text-secondary);">找到 ' + nodes.length + ' 个异常节点</span>' +
+            '<label style="font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer;">' +
+              '<input type="checkbox" id="cleanupSelectAll" onchange="toggleCleanupSelectAll()" checked /> 全选' +
+            '</label>' +
+          '</div>' +
+          nodes.map(function(node) {
+            var name = node.name || node.tag;
+            var calls = (node.success_count || 0) + (node.failure_count || 0);
+            var rate = calls > 0 ? ((node.success_count || 0) / calls * 100).toFixed(1) : '0.0';
+            return '<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--metric-bg);border-radius:12px;margin-bottom:8px;">' +
+              '<input type="checkbox" class="cleanup-node-cb" value="' + escapeHtml(name) + '" checked />' +
+              '<div style="flex:1;min-width:0;">' +
+                '<div style="font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(name) + '</div>' +
+                '<div style="font-size:12px;color:var(--text-secondary);">失败 ' + node.failure_count + ' 次 · 成功率 ' + rate + '%</div>' +
+              '</div>' +
+              '<div style="color:var(--error);font-weight:700;font-size:18px;min-width:40px;text-align:right;">' + node.failure_count + '</div>' +
+            '</div>';
+          }).join('');
+
+        document.getElementById('cleanupSubmitBtn').disabled = false;
+      } catch (err) {
+        container.innerHTML = '<div style="text-align:center;color:var(--error);padding:20px;">扫描失败: ' + err.message + '</div>';
+      }
+    }
+
+    function toggleCleanupSelectAll() {
+      var checked = document.getElementById('cleanupSelectAll').checked;
+      document.querySelectorAll('.cleanup-node-cb').forEach(function(cb) { cb.checked = checked; });
+    }
+
+    async function executeCleanup() {
+      var checkboxes = document.querySelectorAll('.cleanup-node-cb:checked');
+      var names = Array.from(checkboxes).map(function(cb) { return cb.value; });
+
+      if (names.length === 0) {
+        showToast('请至少选择一个节点', 'error');
+        return;
+      }
+
+      if (!confirm('确定要删除选中的 ' + names.length + ' 个异常节点吗？删除后需重载配置生效。')) return;
+
+      var btn = document.getElementById('cleanupSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = '删除中...';
+
+      try {
+        var res = await fetch('/api/nodes/config/batch-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ names: names })
+        });
+        var data = await res.json();
+
+        if (data.deleted > 0) {
+          hideCleanupModal();
+          showToast('已删除 ' + data.deleted + ' 个节点' + (data.failed > 0 ? '，' + data.failed + ' 个失败' : ''), data.failed > 0 ? 'error' : 'success');
+          refresh();
+          if (confirm('删除成功！是否立即重载配置使更改生效？')) {
+            await triggerReload();
+          }
+        } else {
+          var errorEl = document.getElementById('cleanupError');
+          errorEl.textContent = (data.errors && data.errors.length > 0) ? data.errors.join('; ') : '删除失败，节点可能不在配置中';
+          errorEl.classList.add('show');
+        }
+      } catch (err) {
+        showToast('批量删除失败: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '确认删除';
       }
     }
 

@@ -135,6 +135,7 @@ func NewServer(cfg Config, mgr *Manager, logger *log.Logger) *Server {
 	mux.HandleFunc("/api/settings", s.withAuth(s.handleSettings))
 	mux.HandleFunc("/api/nodes", s.withAuth(s.handleNodes))
 	mux.HandleFunc("/api/nodes/config", s.withAuth(s.handleConfigNodes))
+	mux.HandleFunc("/api/nodes/config/batch-delete", s.withAuth(s.handleBatchDeleteNodes))
 	mux.HandleFunc("/api/nodes/config/", s.withAuth(s.handleConfigNodeItem))
 	mux.HandleFunc("/api/nodes/probe-all", s.withAuth(s.handleProbeAll))
 	mux.HandleFunc("/api/nodes/", s.withAuth(s.handleNodeAction))
@@ -849,6 +850,48 @@ func (s *Server) handleConfigNodeItem(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+// handleBatchDeleteNodes handles batch deletion of config nodes by name list.
+func (s *Server) handleBatchDeleteNodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.ensureNodeManager(w) {
+		return
+	}
+
+	var req struct {
+		Names []string `json:"names"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]any{"error": "请求格式错误"})
+		return
+	}
+	if len(req.Names) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		writeJSON(w, map[string]any{"error": "节点名称列表不能为空"})
+		return
+	}
+
+	deleted := 0
+	var errs []string
+	for _, name := range req.Names {
+		if err := s.nodeMgr.DeleteNode(r.Context(), name); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %s", name, err.Error()))
+		} else {
+			deleted++
+		}
+	}
+
+	writeJSON(w, map[string]any{
+		"deleted": deleted,
+		"failed":  len(errs),
+		"errors":  errs,
+		"message": fmt.Sprintf("已删除 %d 个节点", deleted),
+	})
 }
 
 // handleSubscriptions handles GET (list) and POST (add) for subscription sources.
