@@ -663,7 +663,6 @@ func loadNodesFromSubscription(subURL string, timeout time.Duration, userAgent s
 
 	// Set common headers to avoid being blocked
 	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "*/*")
 
 	resp, err := client.Do(req)
 	if err != nil {

@@ -449,7 +449,6 @@ func (m *Manager) fetchSubscription(subURL string, timeout time.Duration) ([]con
 	}
 
 	req.Header.Set("User-Agent", m.baseCfg.SubscriptionRefresh.UserAgent)
-	req.Header.Set("Accept", "*/*")
 
 	// Use custom HTTP client with connection pooling
 	resp, err := m.httpClient.Do(req)
