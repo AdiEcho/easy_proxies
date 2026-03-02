@@ -39,7 +39,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	if err := boxMgr.Start(ctx); err != nil {
 		return fmt.Errorf("start box manager: %w", err)
 	}
-	defer boxMgr.Close()
 
 	// Wire up config to monitor server for settings API
 	if server := boxMgr.MonitorServer(); server != nil {
@@ -51,7 +50,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	if len(cfg.Subscriptions) > 0 {
 		subMgr = subscription.New(cfg, boxMgr)
 		subMgr.Start() // internally checks SubscriptionRefresh.Enabled
-		defer subMgr.Stop()
 
 		// Wire up subscription manager to monitor server for API endpoints
 		if server := boxMgr.MonitorServer(); server != nil {

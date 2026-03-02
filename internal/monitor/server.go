@@ -194,6 +194,11 @@ func (s *Server) updateSettings(externalIP, probeTarget string, skipCertVerify b
 	s.cfg.ExternalIP = externalIP
 	s.cfg.ProbeTarget = probeTarget
 	s.cfg.SkipCertVerify = skipCertVerify
+	if s.mgr != nil {
+		if err := s.mgr.UpdateProbeTarget(probeTarget); err != nil {
+			return fmt.Errorf("更新探测目标失败: %w", err)
+		}
+	}
 
 	if s.cfgSrc == nil {
 		return errors.New("配置存储未初始化")
@@ -601,7 +606,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 		Value:    session.Token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // 生产环境应启用 HTTPS 并设为 true
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(s.sessionTTL.Seconds()),
 	})
@@ -1198,4 +1203,14 @@ func secureCompareStrings(a, b string) bool {
 	}
 
 	return subtle.ConstantTimeCompare(aBytes, bBytes) == 1
+}
+
+func isSecureRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }

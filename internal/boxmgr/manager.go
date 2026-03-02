@@ -112,28 +112,9 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Unlock()
 
 	// Try to start, with automatic port conflict resolution
-	var instance *box.Box
-	maxRetries := 10
-	for retry := 0; retry < maxRetries; retry++ {
-		var err error
-		instance, err = m.createBox(ctx, cfg)
-		if err != nil {
-			return err
-		}
-		if err = instance.Start(); err != nil {
-			_ = instance.Close()
-			// Check if it's a port conflict error
-			if conflictPort := extractPortFromBindError(err); conflictPort > 0 {
-				m.logger.Warnf("port %d is in use, reassigning and retrying...", conflictPort)
-				if reassigned := reassignConflictingPort(cfg, conflictPort); reassigned {
-					pool.ResetSharedStateStore() // Reset shared state for rebuild
-					pool.ResetPoolRegistry()
-					continue
-				}
-			}
-			return fmt.Errorf("start sing-box: %w", err)
-		}
-		break // Success
+	instance, err := m.startBoxWithRetry(ctx, cfg, "start sing-box")
+	if err != nil {
+		return err
 	}
 
 	m.mu.Lock()
@@ -218,30 +199,10 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 	}
 
 	// Create and start new box instance with automatic port conflict resolution
-	var instance *box.Box
-	maxRetries := 10
-	for retry := 0; retry < maxRetries; retry++ {
-		var err error
-		instance, err = m.createBox(ctx, newCfg)
-		if err != nil {
-			m.rollbackToOldConfig(ctx, oldCfg)
-			return fmt.Errorf("create new box: %w", err)
-		}
-		if err = instance.Start(); err != nil {
-			_ = instance.Close()
-			// Check if it's a port conflict error
-			if conflictPort := extractPortFromBindError(err); conflictPort > 0 {
-				m.logger.Warnf("port %d is in use, reassigning and retrying...", conflictPort)
-				if reassigned := reassignConflictingPort(newCfg, conflictPort); reassigned {
-					pool.ResetSharedStateStore()
-					pool.ResetPoolRegistry()
-					continue
-				}
-			}
-			m.rollbackToOldConfig(ctx, oldCfg)
-			return fmt.Errorf("start new box: %w", err)
-		}
-		break // Success
+	instance, err := m.startBoxWithRetry(ctx, newCfg, "start new box")
+	if err != nil {
+		m.rollbackToOldConfig(ctx, oldCfg)
+		return err
 	}
 
 	m.applyConfigSettings(newCfg)
@@ -769,6 +730,41 @@ func (m *Manager) CurrentPortMap() map[string]uint16 {
 }
 
 // --- Helper functions ---
+
+func (m *Manager) startBoxWithRetry(ctx context.Context, cfg *config.Config, op string) (*box.Box, error) {
+	const maxRetries = 10
+
+	var lastErr error
+	for retry := 0; retry < maxRetries; retry++ {
+		instance, err := m.createBox(ctx, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("create box: %w", err)
+		}
+
+		if err := instance.Start(); err != nil {
+			_ = instance.Close()
+			lastErr = err
+
+			// Check if it's a port conflict error and retry after reassignment.
+			if conflictPort := extractPortFromBindError(err); conflictPort > 0 {
+				m.logger.Warnf("port %d is in use, reassigning and retrying...", conflictPort)
+				if reassigned := reassignConflictingPort(cfg, conflictPort); reassigned {
+					pool.ResetSharedStateStore()
+					pool.ResetPoolRegistry()
+					continue
+				}
+			}
+			return nil, fmt.Errorf("%s: %w", op, err)
+		}
+
+		return instance, nil
+	}
+
+	if lastErr != nil {
+		return nil, fmt.Errorf("%s: retries exhausted: %w", op, lastErr)
+	}
+	return nil, fmt.Errorf("%s: retries exhausted", op)
+}
 
 // portBindErrorRegex matches "listen tcp4 0.0.0.0:24282: bind: address already in use"
 var portBindErrorRegex = regexp.MustCompile(`listen tcp[46]? [^:]+:(\d+): bind: address already in use`)

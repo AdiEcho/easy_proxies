@@ -39,3 +39,5 @@ coverage.html
 # Qodo
 .qodo/
 .omc/
+.omx/
+AGENTS.md

@@ -596,7 +596,7 @@ func loadNodesFromFile(path string) ([]NodeConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseNodesFromContent(string(data))
+	return ParseNodesFromContent(string(data))
 }
 
 // loadNodesFromSubscription fetches and parses nodes from a subscription URL
@@ -615,7 +615,7 @@ func loadNodesFromSubscription(subURL string, timeout time.Duration) ([]NodeConf
 	}
 
 	// Set common headers to avoid being blocked
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", "mihomo.party/v1.9.2 (clash.meta)")
 	req.Header.Set("Accept", "*/*")
 
 	resp, err := client.Do(req)
@@ -636,6 +636,11 @@ func loadNodesFromSubscription(subURL string, timeout time.Duration) ([]NodeConf
 	content := string(body)
 
 	// Try to detect and parse different formats
+	return ParseSubscriptionContent(content)
+}
+
+// ParseSubscriptionContent parses subscription content in various formats.
+func ParseSubscriptionContent(content string) ([]NodeConfig, error) {
 	return parseSubscriptionContent(content)
 }
 
@@ -667,6 +672,11 @@ func parseSubscriptionContent(content string) ([]NodeConfig, error) {
 	}
 
 	// Parse as plain text (one URI per line)
+	return ParseNodesFromContent(content)
+}
+
+// ParseNodesFromContent parses nodes from plain text content (one URI per line).
+func ParseNodesFromContent(content string) ([]NodeConfig, error) {
 	return parseNodesFromContent(content)
 }
 
@@ -684,7 +694,7 @@ func parseNodesFromContent(content string) ([]NodeConfig, error) {
 		}
 
 		// Check if it's a valid proxy URI
-		if isProxyURI(line) {
+		if IsProxyURI(line) {
 			nodes = append(nodes, NodeConfig{
 				URI: line,
 			})
@@ -722,6 +732,11 @@ func isBase64(s string) bool {
 
 	// Length must be multiple of 4 (with padding)
 	return len(s)%4 == 0
+}
+
+// IsProxyURI checks if a string is a supported proxy URI.
+func IsProxyURI(s string) bool {
+	return isProxyURI(s)
 }
 
 // isProxyURI checks if a string is a valid proxy URI
@@ -1032,29 +1047,26 @@ func (c *Config) SaveNodes() error {
 		}
 	}
 
-	// Only update config.yaml if there are inline nodes to save
-	// and preserve the original config structure
-	if len(inlineNodes) > 0 {
-		// Read original config to preserve structure
-		data, err := os.ReadFile(c.filePath)
-		if err != nil {
-			return fmt.Errorf("read config: %w", err)
-		}
-		var saveCfg Config
-		if err := yaml.Unmarshal(data, &saveCfg); err != nil {
-			return fmt.Errorf("decode config: %w", err)
-		}
-		// Update only the inline nodes
-		saveCfg.Nodes = inlineNodes
+	// Always update config.yaml nodes to persist inline node changes (including empty).
+	// Preserve the rest of config structure.
+	data, err := os.ReadFile(c.filePath)
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+	var saveCfg Config
+	if err := yaml.Unmarshal(data, &saveCfg); err != nil {
+		return fmt.Errorf("decode config: %w", err)
+	}
+	// Update only the inline nodes section.
+	saveCfg.Nodes = inlineNodes
 
-		newData, err := yaml.Marshal(&saveCfg)
-		if err != nil {
-			return fmt.Errorf("encode config: %w", err)
-		}
-		// Use file locking for safe concurrent writes
-		if err := writeFileWithLock(c.filePath, newData, 0o644); err != nil {
-			return fmt.Errorf("write config: %w", err)
-		}
+	newData, err := yaml.Marshal(&saveCfg)
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	// Use file locking for safe concurrent writes.
+	if err := writeFileWithLock(c.filePath, newData, 0o644); err != nil {
+		return fmt.Errorf("write config: %w", err)
 	}
 
 	return nil
@@ -1157,7 +1169,7 @@ func unlockFile(f *os.File) error {
 
 // writeFileWithLock writes data to a file with exclusive locking.
 func writeFileWithLock(path string, data []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, perm)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, perm)
 	if err != nil {
 		return fmt.Errorf("open file: %w", err)
 	}
@@ -1168,6 +1180,14 @@ func writeFileWithLock(path string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("lock file: %w", err)
 	}
 	defer unlockFile(f)
+
+	// Truncate only after lock is held.
+	if err := f.Truncate(0); err != nil {
+		return fmt.Errorf("truncate file: %w", err)
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		return fmt.Errorf("seek file: %w", err)
+	}
 
 	// Write data
 	if _, err := f.Write(data); err != nil {

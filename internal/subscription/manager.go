@@ -3,7 +3,6 @@ package subscription
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -130,6 +129,20 @@ func (m *Manager) Stop() {
 
 // RefreshNow triggers an immediate refresh.
 func (m *Manager) RefreshNow() error {
+	if len(m.baseCfg.Subscriptions) == 0 {
+		return fmt.Errorf("no subscriptions configured")
+	}
+
+	// If periodic refresh loop is disabled, run a synchronous refresh directly.
+	if !m.baseCfg.SubscriptionRefresh.Enabled {
+		m.doRefresh()
+		status := m.Status()
+		if status.LastError != "" {
+			return fmt.Errorf("refresh failed: %s", status.LastError)
+		}
+		return nil
+	}
+
 	select {
 	case m.manualRefresh <- struct{}{}:
 	default:
@@ -370,7 +383,7 @@ func (m *Manager) CheckNodesModified() bool {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if isProxyURI(line) {
+		if config.IsProxyURI(line) {
 			nodes = append(nodes, config.NodeConfig{URI: line})
 		}
 	}
@@ -435,7 +448,7 @@ func (m *Manager) fetchSubscription(subURL string, timeout time.Duration) ([]con
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", "mihomo.party/v1.9.2 (clash.meta)")
 	req.Header.Set("Accept", "*/*")
 
 	// Use custom HTTP client with connection pooling
@@ -458,7 +471,7 @@ func (m *Manager) fetchSubscription(subURL string, timeout time.Duration) ([]con
 		return nil, fmt.Errorf("read body: %w", err)
 	}
 
-	return parseSubscriptionContent(string(body))
+	return config.ParseSubscriptionContent(string(body))
 }
 
 // createNewConfig creates a new config with updated nodes while preserving other settings.
@@ -504,60 +517,6 @@ func (m *Manager) createNewConfig(nodes []config.NodeConfig) *config.Config {
 	return &newCfg
 }
 
-// parseSubscriptionContent parses subscription content in various formats.
-// This is a simplified version - the full implementation is in config package.
-func parseSubscriptionContent(content string) ([]config.NodeConfig, error) {
-	content = strings.TrimSpace(content)
-
-	// Check if it's base64 encoded
-	if isBase64(content) {
-		decoded, err := base64.StdEncoding.DecodeString(content)
-		if err != nil {
-			decoded, err = base64.RawStdEncoding.DecodeString(content)
-			if err != nil {
-				return parseNodesFromContent(content)
-			}
-		}
-		content = string(decoded)
-	}
-
-	// Parse as plain text (one URI per line)
-	return parseNodesFromContent(content)
-}
-
-func isBase64(s string) bool {
-	s = strings.TrimSpace(s)
-	if len(s) == 0 {
-		return false
-	}
-	s = strings.ReplaceAll(s, "\n", "")
-	s = strings.ReplaceAll(s, "\r", "")
-	if strings.Contains(s, "://") {
-		return false
-	}
-	_, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		_, err = base64.RawStdEncoding.DecodeString(s)
-	}
-	return err == nil
-}
-
-func parseNodesFromContent(content string) ([]config.NodeConfig, error) {
-	var nodes []config.NodeConfig
-	lines := strings.Split(content, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if isProxyURI(line) {
-			nodes = append(nodes, config.NodeConfig{URI: line})
-		}
-	}
-	return nodes, nil
-}
-
 // SubscriptionInfo represents a subscription source with runtime statistics.
 type SubscriptionInfo struct {
 	URL        string  `json:"url"`
@@ -579,69 +538,90 @@ func (m *Manager) ListSubscriptions() []config.SubscriptionSource {
 // AddSubscription adds a new subscription source and persists to config.
 func (m *Manager) AddSubscription(sub config.SubscriptionSource) error {
 	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// Check for duplicate URL
 	for _, existing := range m.baseCfg.Subscriptions {
 		if existing.URL == sub.URL {
-			m.mu.Unlock()
 			return fmt.Errorf("订阅源已存在: %s", sub.URL)
 		}
 	}
-	m.baseCfg.Subscriptions = append(m.baseCfg.Subscriptions, sub)
-	m.mu.Unlock()
 
-	return m.baseCfg.SaveSubscriptions()
+	previous := cloneSubscriptions(m.baseCfg.Subscriptions)
+	updated := append(cloneSubscriptions(previous), sub)
+	m.baseCfg.Subscriptions = updated
+	if err := m.baseCfg.SaveSubscriptions(); err != nil {
+		m.baseCfg.Subscriptions = previous
+		return fmt.Errorf("保存配置失败: %w", err)
+	}
+	return nil
 }
 
 // UpdateSubscription updates an existing subscription source by URL.
 func (m *Manager) UpdateSubscription(oldURL string, sub config.SubscriptionSource) error {
 	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	found := false
-	for i, existing := range m.baseCfg.Subscriptions {
+	updated := cloneSubscriptions(m.baseCfg.Subscriptions)
+	for i, existing := range updated {
 		if existing.URL == oldURL {
 			// If URL changed, check for duplicate
 			if sub.URL != oldURL {
-				for j, other := range m.baseCfg.Subscriptions {
+				for j, other := range updated {
 					if j != i && other.URL == sub.URL {
-						m.mu.Unlock()
 						return fmt.Errorf("订阅源已存在: %s", sub.URL)
 					}
 				}
 			}
-			m.baseCfg.Subscriptions[i] = sub
+			updated[i] = sub
 			found = true
 			break
 		}
 	}
-	m.mu.Unlock()
 
 	if !found {
 		return fmt.Errorf("订阅源不存在: %s", oldURL)
 	}
-	return m.baseCfg.SaveSubscriptions()
+
+	previous := cloneSubscriptions(m.baseCfg.Subscriptions)
+	m.baseCfg.Subscriptions = updated
+	if err := m.baseCfg.SaveSubscriptions(); err != nil {
+		m.baseCfg.Subscriptions = previous
+		return fmt.Errorf("保存配置失败: %w", err)
+	}
+	return nil
 }
 
 // DeleteSubscription removes a subscription source by URL and cleans up its nodes.
 func (m *Manager) DeleteSubscription(subURL string) error {
 	m.mu.Lock()
 	found := false
-	subs := m.baseCfg.Subscriptions
-	for i, existing := range subs {
+	subs := cloneSubscriptions(m.baseCfg.Subscriptions)
+	updated := cloneSubscriptions(subs)
+	for i, existing := range updated {
 		if existing.URL == subURL {
-			m.baseCfg.Subscriptions = append(subs[:i], subs[i+1:]...)
+			updated = append(updated[:i], updated[i+1:]...)
 			found = true
 			break
 		}
 	}
-	m.mu.Unlock()
 
 	if !found {
+		m.mu.Unlock()
 		return fmt.Errorf("订阅源不存在: %s", subURL)
 	}
 
+	m.baseCfg.Subscriptions = updated
 	if err := m.baseCfg.SaveSubscriptions(); err != nil {
+		m.baseCfg.Subscriptions = subs
+		m.mu.Unlock()
 		return fmt.Errorf("保存配置失败: %w", err)
 	}
 
+	m.mu.Unlock()
+
+	// Perform cleanup outside manager lock to avoid blocking readers/writers.
 	// Clean up nodes belonging to the deleted subscription
 	m.removeSubscriptionNodes(subURL)
 
@@ -729,15 +709,10 @@ func (m *Manager) RefreshOne(subURL string) (int, error) {
 	return len(nodes), nil
 }
 
-func isProxyURI(s string) bool {
-	schemes := []string{"vmess://", "vless://", "trojan://", "ss://", "ssr://", "hysteria://", "hysteria2://", "hy2://"}
-	lower := strings.ToLower(s)
-	for _, scheme := range schemes {
-		if strings.HasPrefix(lower, scheme) {
-			return true
-		}
-	}
-	return false
+func cloneSubscriptions(subs config.SubscriptionList) config.SubscriptionList {
+	out := make(config.SubscriptionList, len(subs))
+	copy(out, subs)
+	return out
 }
 
 type defaultLogger struct{}

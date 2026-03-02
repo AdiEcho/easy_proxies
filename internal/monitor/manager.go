@@ -134,31 +134,13 @@ func NewManager(cfg Config) (*Manager, error) {
 		ctx:    ctx,
 		cancel: cancel,
 	}
-	if cfg.ProbeTarget != "" {
-		target := cfg.ProbeTarget
-		// Strip URL scheme if present (e.g., "https://www.google.com:443" -> "www.google.com:443")
-		if strings.HasPrefix(target, "https://") {
-			target = strings.TrimPrefix(target, "https://")
-		} else if strings.HasPrefix(target, "http://") {
-			target = strings.TrimPrefix(target, "http://")
-		}
-		// Remove trailing path if present
-		if idx := strings.Index(target, "/"); idx != -1 {
-			target = target[:idx]
-		}
-		host, port, err := net.SplitHostPort(target)
-		if err != nil {
-			// If no port specified, use default based on original scheme
-			if strings.HasPrefix(cfg.ProbeTarget, "https://") {
-				host = target
-				port = "443"
-			} else {
-				host = target
-				port = "80"
-			}
-		}
-		parsed := M.ParseSocksaddrHostPort(host, parsePort(port))
-		m.probeDst = parsed
+	dst, ready, err := parseProbeTarget(cfg.ProbeTarget)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	if ready {
+		m.probeDst = dst
 		m.probeReady = true
 	}
 	return m, nil
@@ -283,6 +265,21 @@ func (m *Manager) Stop() {
 	}
 }
 
+// UpdateProbeTarget updates probe destination used by periodic health checks.
+func (m *Manager) UpdateProbeTarget(target string) error {
+	dst, ready, err := parseProbeTarget(target)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.cfg.ProbeTarget = target
+	m.probeDst = dst
+	m.probeReady = ready
+	m.mu.Unlock()
+	return nil
+}
+
 // ClearNodes removes all tracked nodes. Call before reload to prevent stale entries.
 func (m *Manager) ClearNodes() {
 	m.mu.Lock()
@@ -306,6 +303,46 @@ func parsePort(value string) uint16 {
 		return 80
 	}
 	return uint16(p)
+}
+
+func parseProbeTarget(raw string) (M.Socksaddr, bool, error) {
+	target := strings.TrimSpace(raw)
+	if target == "" {
+		return M.Socksaddr{}, false, nil
+	}
+
+	// Strip URL scheme if present (e.g., "https://www.google.com:443" -> "www.google.com:443").
+	lower := strings.ToLower(target)
+	if strings.HasPrefix(lower, "https://") {
+		target = target[len("https://"):]
+	} else if strings.HasPrefix(lower, "http://") {
+		target = target[len("http://"):]
+	}
+
+	// Remove trailing path if present.
+	if idx := strings.Index(target, "/"); idx != -1 {
+		target = target[:idx]
+	}
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return M.Socksaddr{}, false, errors.New("probe target is empty")
+	}
+
+	host, port, err := net.SplitHostPort(target)
+	if err != nil {
+		// If no port specified, use default based on original scheme.
+		host = target
+		if strings.HasPrefix(lower, "https://") {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	if strings.TrimSpace(host) == "" {
+		return M.Socksaddr{}, false, errors.New("probe target host is empty")
+	}
+
+	return M.ParseSocksaddrHostPort(host, parsePort(port)), true, nil
 }
 
 // Register ensures a node is tracked and returns its entry.

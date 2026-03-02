@@ -351,10 +351,10 @@ func (l *Lookup) Update() error {
 	return nil
 }
 
-// downloadDatabase downloads the GeoIP database to the specified path
-func downloadDatabase(filepath string) error {
+// downloadDatabase downloads the GeoIP database to the specified path.
+func downloadDatabase(targetPath string) error {
 	// Create parent directory if needed
-	dir := filepath[:strings.LastIndex(filepath, "/")]
+	dir := filepath.Dir(targetPath)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("create directory: %w", err)
@@ -417,7 +417,7 @@ func downloadDatabase(filepath string) error {
 	tempFile = nil
 
 	// Rename to target path
-	if err := os.Rename(tempPath, filepath); err != nil {
+	if err := os.Rename(tempPath, targetPath); err != nil {
 		return err
 	}
 	cleanup = false
