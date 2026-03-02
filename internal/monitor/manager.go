@@ -95,6 +95,13 @@ type entry struct {
 	mu               sync.RWMutex
 }
 
+const snapshotCacheTTL = 2 * time.Second
+
+type cachedSnapshot struct {
+	data      []Snapshot
+	createdAt time.Time
+}
+
 // Manager aggregates all node states for the UI/API.
 type Manager struct {
 	cfg        Config
@@ -105,6 +112,11 @@ type Manager struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	logger     Logger
+
+	// Snapshot cache
+	snapshotCacheMu   sync.RWMutex
+	snapshotAll       *cachedSnapshot
+	snapshotAvailable *cachedSnapshot
 }
 
 // Logger interface for logging
@@ -276,6 +288,16 @@ func (m *Manager) ClearNodes() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nodes = make(map[string]*entry)
+	m.invalidateSnapshotCache()
+}
+
+// invalidateSnapshotCache clears the snapshot cache. Must be called when nodes change.
+// Caller should hold m.mu (write lock) or m.snapshotCacheMu will handle its own locking.
+func (m *Manager) invalidateSnapshotCache() {
+	m.snapshotCacheMu.Lock()
+	m.snapshotAll = nil
+	m.snapshotAvailable = nil
+	m.snapshotCacheMu.Unlock()
 }
 
 func parsePort(value string) uint16 {
@@ -300,6 +322,7 @@ func (m *Manager) Register(info NodeInfo) *EntryHandle {
 	} else {
 		e.info = info
 	}
+	m.invalidateSnapshotCache()
 	return &EntryHandle{ref: e}
 }
 
@@ -320,7 +343,25 @@ func (m *Manager) Snapshot() []Snapshot {
 // SnapshotFiltered returns a sorted copy of current node states.
 // If onlyAvailable is true, only returns nodes that passed initial health check.
 // Nodes that haven't been checked yet are also included (they will be checked on first use).
+// Results are cached for 2 seconds to reduce overhead under high request load.
 func (m *Manager) SnapshotFiltered(onlyAvailable bool) []Snapshot {
+	// Check cache first
+	m.snapshotCacheMu.RLock()
+	var cached *cachedSnapshot
+	if onlyAvailable {
+		cached = m.snapshotAvailable
+	} else {
+		cached = m.snapshotAll
+	}
+	if cached != nil && time.Since(cached.createdAt) < snapshotCacheTTL {
+		result := make([]Snapshot, len(cached.data))
+		copy(result, cached.data)
+		m.snapshotCacheMu.RUnlock()
+		return result
+	}
+	m.snapshotCacheMu.RUnlock()
+
+	// Cache miss or expired: rebuild
 	m.mu.RLock()
 	list := make([]*entry, 0, len(m.nodes))
 	for _, e := range m.nodes {
@@ -330,9 +371,6 @@ func (m *Manager) SnapshotFiltered(onlyAvailable bool) []Snapshot {
 	snapshots := make([]Snapshot, 0, len(list))
 	for _, e := range list {
 		snap := e.snapshot()
-		// 如果只要可用节点：
-		// - 跳过已完成检查但不可用的节点
-		// - 保留未完成检查的节点（它们会在首次使用时被检查）
 		if onlyAvailable && snap.InitialCheckDone && !snap.Available {
 			continue
 		}
@@ -357,7 +395,21 @@ func (m *Manager) SnapshotFiltered(onlyAvailable bool) []Snapshot {
 		}
 		return latencyI < latencyJ
 	})
-	return snapshots
+
+	// Update cache
+	entry := &cachedSnapshot{data: snapshots, createdAt: time.Now()}
+	m.snapshotCacheMu.Lock()
+	if onlyAvailable {
+		m.snapshotAvailable = entry
+	} else {
+		m.snapshotAll = entry
+	}
+	m.snapshotCacheMu.Unlock()
+
+	// Return a copy so the caller can't mutate the cache
+	result := make([]Snapshot, len(snapshots))
+	copy(result, snapshots)
+	return result
 }
 
 // Probe triggers a manual health check.

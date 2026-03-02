@@ -65,6 +65,8 @@ type Manager struct {
 
 	baseCtx            context.Context
 	healthCheckStarted bool
+
+	nameIndex map[string]int // O(1) node name lookup index
 }
 
 // New creates a BoxManager with the given config.
@@ -202,8 +204,8 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 		if err := oldBox.Close(); err != nil {
 			m.logger.Warnf("error closing old instance: %v", err)
 		}
-		// Give OS time to release ports
-		time.Sleep(500 * time.Millisecond)
+		// Poll for port availability instead of fixed sleep
+		m.waitForPortRelease(oldCfg)
 	}
 
 	// Reset shared state store to ensure clean state for new config
@@ -247,6 +249,7 @@ func (m *Manager) Reload(newCfg *config.Config) error {
 	m.mu.Lock()
 	m.currentBox = instance
 	m.cfg = newCfg
+	m.rebuildNameIndexLocked()
 	m.mu.Unlock()
 
 	m.logger.Infof("reload completed successfully with %d nodes", len(newCfg.Nodes))
@@ -646,6 +649,7 @@ func (m *Manager) CreateNode(ctx context.Context, node config.NodeConfig) (confi
 		m.cfg.Nodes = m.cfg.Nodes[:len(m.cfg.Nodes)-1]
 		return config.NodeConfig{}, fmt.Errorf("save config: %w", err)
 	}
+	m.rebuildNameIndexLocked()
 	return normalized, nil
 }
 
@@ -684,6 +688,7 @@ func (m *Manager) UpdateNode(ctx context.Context, name string, node config.NodeC
 		m.cfg.Nodes[idx] = prev
 		return config.NodeConfig{}, fmt.Errorf("save config: %w", err)
 	}
+	m.rebuildNameIndexLocked()
 	return normalized, nil
 }
 
@@ -714,6 +719,7 @@ func (m *Manager) DeleteNode(ctx context.Context, name string) error {
 		m.cfg.Nodes = backup
 		return fmt.Errorf("save config: %w", err)
 	}
+	m.rebuildNameIndexLocked()
 	return nil
 }
 
@@ -850,12 +856,67 @@ func (m *Manager) copyConfigLocked() *config.Config {
 }
 
 func (m *Manager) nodeIndexLocked(name string) int {
+	if m.nameIndex != nil {
+		if idx, ok := m.nameIndex[name]; ok && idx < len(m.cfg.Nodes) && m.cfg.Nodes[idx].Name == name {
+			return idx
+		}
+	}
+	// Fallback to linear scan (index may be stale)
 	for idx, node := range m.cfg.Nodes {
 		if node.Name == name {
 			return idx
 		}
 	}
 	return -1
+}
+
+// rebuildNameIndexLocked rebuilds the O(1) name lookup index. Must be called with m.mu held.
+func (m *Manager) rebuildNameIndexLocked() {
+	if m.cfg == nil {
+		m.nameIndex = nil
+		return
+	}
+	m.nameIndex = make(map[string]int, len(m.cfg.Nodes))
+	for i, node := range m.cfg.Nodes {
+		m.nameIndex[node.Name] = i
+	}
+}
+
+// waitForPortRelease polls for port availability instead of a fixed sleep.
+func (m *Manager) waitForPortRelease(cfg *config.Config) {
+	if cfg == nil || len(cfg.Nodes) == 0 {
+		return
+	}
+
+	// Pick a representative port to check
+	var checkPort uint16
+	address := "0.0.0.0"
+	if cfg.Mode == "multi-port" && len(cfg.Nodes) > 0 {
+		checkPort = cfg.Nodes[0].Port
+		if cfg.MultiPort.Address != "" {
+			address = cfg.MultiPort.Address
+		}
+	} else if cfg.Listener.Port > 0 {
+		checkPort = cfg.Listener.Port
+		if cfg.Listener.Address != "" {
+			address = cfg.Listener.Address
+		}
+	}
+
+	if checkPort == 0 {
+		time.Sleep(500 * time.Millisecond) // Fallback
+		return
+	}
+
+	const maxAttempts = 50
+	const pollInterval = 10 * time.Millisecond
+	for i := 0; i < maxAttempts; i++ {
+		if isPortAvailable(address, checkPort) {
+			return
+		}
+		time.Sleep(pollInterval)
+	}
+	// Port still not available after 500ms, proceed anyway
 }
 
 func (m *Manager) portInUseLocked(port uint16, currentName string) bool {

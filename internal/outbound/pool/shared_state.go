@@ -11,12 +11,13 @@ import (
 // sharedMemberState holds failure/blacklist state shared across all pool instances.
 // This enables hybrid mode where pool and multi-port modes share the same node state.
 type sharedMemberState struct {
-	mu               sync.Mutex
-	failures         int
-	blacklisted      bool
-	blacklistedUntil time.Time
-	entry            atomic.Pointer[monitor.EntryHandle]
-	active           atomic.Int32
+	mu                   sync.Mutex
+	failures             int
+	blacklisted          bool
+	blacklistedUntil     time.Time
+	blacklistedUntilUnix atomic.Int64 // atomic fast path for isBlacklisted
+	entry                atomic.Pointer[monitor.EntryHandle]
+	active               atomic.Int32
 }
 
 var sharedStateStore sync.Map // map[tag]*sharedMemberState
@@ -73,6 +74,7 @@ func (s *sharedMemberState) recordFailure(cause error, threshold int, duration t
 		s.failures = 0
 		s.blacklisted = true
 		s.blacklistedUntil = until
+		s.blacklistedUntilUnix.Store(until.Unix())
 	}
 	s.mu.Unlock()
 
@@ -97,11 +99,23 @@ func (s *sharedMemberState) recordSuccess() {
 
 // isBlacklisted checks if the node is currently blacklisted, auto-clearing if expired.
 func (s *sharedMemberState) isBlacklisted(now time.Time) bool {
+	// Fast path: atomic check without lock
+	untilUnix := s.blacklistedUntilUnix.Load()
+	if untilUnix == 0 {
+		return false // Not blacklisted
+	}
+	// Not yet expired, still blacklisted
+	if now.Unix() < untilUnix {
+		return true
+	}
+
+	// Expired: need lock to clear
 	s.mu.Lock()
 	expired := s.blacklisted && now.After(s.blacklistedUntil)
 	if expired {
 		s.blacklisted = false
 		s.blacklistedUntil = time.Time{}
+		s.blacklistedUntilUnix.Store(0)
 	}
 	blacklisted := s.blacklisted
 	s.mu.Unlock()
@@ -119,6 +133,7 @@ func (s *sharedMemberState) forceRelease() {
 	s.failures = 0
 	s.blacklisted = false
 	s.blacklistedUntil = time.Time{}
+	s.blacklistedUntilUnix.Store(0)
 	s.mu.Unlock()
 
 	if entry := s.entry.Load(); entry != nil {
